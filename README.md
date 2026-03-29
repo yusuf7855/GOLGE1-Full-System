@@ -4,6 +4,8 @@
 
 > Canli Demo: [spectraloop.com](https://spectraloop.com) | Mobil Kontrol: [spectraloop.com/mobile](https://spectraloop.com/mobile)
 
+![GOLGE-1 Yer Istasyonu C2 Arayuzu](screenshot.png)
+
 ---
 
 ## Proje Hakkinda
