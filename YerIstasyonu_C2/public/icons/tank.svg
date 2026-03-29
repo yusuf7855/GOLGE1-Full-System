@@ -1,0 +1,16 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 80'>
+<defs><linearGradient id='tb' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='#5a6a4a'/><stop offset='100%' stop-color='#3a4a2a'/></linearGradient></defs>
+<rect x='8' y='42' width='104' height='24' rx='6' fill='url(#tb)' stroke='#2a3a1a' stroke-width='2'/>
+<rect x='4' y='58' width='112' height='14' rx='7' fill='#2a3a1a' stroke='#1a2a0a' stroke-width='1.5'/>
+<circle cx='18' cy='65' r='6' fill='#222' stroke='#444' stroke-width='1.5'/><circle cx='18' cy='65' r='2.5' fill='#333'/>
+<circle cx='38' cy='65' r='6' fill='#222' stroke='#444' stroke-width='1.5'/><circle cx='38' cy='65' r='2.5' fill='#333'/>
+<circle cx='58' cy='65' r='6' fill='#222' stroke='#444' stroke-width='1.5'/><circle cx='58' cy='65' r='2.5' fill='#333'/>
+<circle cx='78' cy='65' r='6' fill='#222' stroke='#444' stroke-width='1.5'/><circle cx='78' cy='65' r='2.5' fill='#333'/>
+<circle cx='98' cy='65' r='6' fill='#222' stroke='#444' stroke-width='1.5'/><circle cx='98' cy='65' r='2.5' fill='#333'/>
+<rect x='30' y='24' width='42' height='22' rx='8' fill='#4a5a3a' stroke='#2a3a1a' stroke-width='2'/>
+<rect x='68' y='30' width='44' height='6' rx='2' fill='#5a6a4a' stroke='#3a4a2a' stroke-width='1.5'/>
+<circle cx='110' cy='33' r='3' fill='#5a6a4a' stroke='#3a4a2a' stroke-width='1'/>
+<rect x='34' y='22' width='8' height='4' rx='2' fill='#3a4a2a'/>
+<rect x='58' y='28' width='4' height='4' rx='1' fill='#6a7a5a'/>
+<rect x='38' y='44' width='16' height='3' fill='#3a4a2a' rx='1'/>
+</svg>

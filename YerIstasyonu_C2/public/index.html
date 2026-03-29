@@ -1,0 +1,3046 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GÖLGE-1 // TAKTİK C2 ARAYÜZÜ v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg0:#030609;--bg1:#060c12;--bg2:#0a1520;--bg3:#0f1e30;
+  --accent:#00f0ff;--accent2:#00ff9d;--accent3:#ff4560;--critical:#ff0040;
+  --warn:#ffc107;--dim:#1a2a3a;
+  --text:#b8cfe0;--textd:#4a6a8a;
+  --border:rgba(0,240,255,0.12);--border2:rgba(0,255,157,0.18);
+  --font:'Share Tech Mono',monospace;
+  --font2:'Orbitron',monospace;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg0);}
+
+/* BOOT */
+#boot{position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;}
+.boot-logo{font-family:var(--font2);font-size:42px;font-weight:900;color:var(--accent);letter-spacing:8px;animation:bootGlow 1s ease infinite alternate;}
+.boot-sub{font-family:var(--font);font-size:11px;color:var(--textd);letter-spacing:4px;}
+.boot-bar-wrap{width:300px;height:2px;background:#111;margin-top:24px;}
+.boot-bar{height:100%;background:var(--accent);width:0;transition:width .05s linear;}
+.boot-line{font-family:var(--font);font-size:9px;color:var(--accent2);height:14px;letter-spacing:1px;}
+@keyframes bootGlow{from{text-shadow:0 0 20px var(--accent)}to{text-shadow:0 0 60px var(--accent),0 0 100px rgba(0,240,255,.3)}}
+
+/* SCAN LINE */
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);pointer-events:none;z-index:9998;}
+
+/* FLOATING PARTICLES */
+#particles{position:fixed;inset:0;pointer-events:none;z-index:9997;overflow:hidden;}
+.particle{position:absolute;width:1px;height:1px;background:var(--accent);border-radius:50%;opacity:0;animation:floatUp linear infinite;}
+@keyframes floatUp{0%{opacity:0;transform:translateY(100vh) scale(1)}10%{opacity:.6}90%{opacity:.4}100%{opacity:0;transform:translateY(-10vh) scale(0.5)}}
+
+/* ALARM OVERLAY */
+#alarmOverlay{position:fixed;inset:0;z-index:9990;pointer-events:none;display:none;}
+#alarmOverlay.active{display:block;animation:alarmFlash .5s ease infinite;}
+#alarmOverlay .alarm-bg{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(255,0,40,.15) 0%,rgba(255,0,40,.05) 50%,transparent 80%);}
+#alarmOverlay .alarm-border{position:absolute;inset:0;border:3px solid var(--critical);animation:alarmBorder .8s ease infinite;}
+#alarmOverlay .alarm-text{position:absolute;top:60px;left:50%;transform:translateX(-50%);font-family:var(--font2);font-size:16px;color:var(--critical);letter-spacing:6px;text-shadow:0 0 30px var(--critical);white-space:nowrap;}
+@keyframes alarmFlash{0%,100%{opacity:.7}50%{opacity:1}}
+@keyframes alarmBorder{0%,100%{border-color:var(--critical)}50%{border-color:rgba(255,0,64,.3)}}
+
+/* MISSILE WARNING BANNER */
+#missileBanner{position:fixed;top:48px;left:0;right:0;z-index:9991;height:32px;display:none;align-items:center;justify-content:center;background:rgba(255,0,40,.9);color:#fff;font-family:var(--font2);font-size:11px;letter-spacing:4px;pointer-events:none;}
+#missileBanner.active{display:flex;}
+#missileBanner .scroll-text{animation:scrollText 8s linear infinite;white-space:nowrap;}
+#missileTracker{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:9992;display:none;background:rgba(0,0,0,.85);border:1px solid #ff0040;padding:8px 20px;font-family:var(--font);font-size:12px;color:#ff4040;letter-spacing:1px;pointer-events:none;white-space:nowrap;text-shadow:0 0 8px rgba(255,0,64,.5);backdrop-filter:blur(4px);}
+#missileTracker.active{display:block;}
+@keyframes scrollText{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
+
+/* SCREEN SHAKE */
+#ui.shake{animation:screenShake .4s ease;}
+@keyframes screenShake{0%,100%{transform:translate(0)}10%{transform:translate(-3px,2px)}20%{transform:translate(3px,-2px)}30%{transform:translate(-2px,3px)}40%{transform:translate(2px,-1px)}50%{transform:translate(-1px,2px)}}
+
+/* MAIN LAYOUT */
+#ui{position:fixed;inset:0;display:grid;grid-template-rows:48px 1fr 36px;opacity:0;transition:opacity .5s;}
+#ui.visible{opacity:1;}
+
+/* TOP BAR */
+#topbar{background:rgba(3,6,9,.95);border-bottom:1px solid var(--border);backdrop-filter:blur(10px);display:flex;align-items:center;padding:0 14px;gap:0;position:relative;z-index:100;}
+.tb-logo{font-family:var(--font2);font-size:13px;font-weight:900;color:var(--accent);letter-spacing:3px;display:flex;align-items:center;gap:8px;min-width:200px;}
+.logo-pulse{width:7px;height:7px;background:var(--accent2);border-radius:50%;animation:pulse 1.8s infinite;}
+.tb-sep{width:1px;height:28px;background:var(--border);margin:0 12px;}
+.tb-center{flex:1;display:flex;gap:20px;align-items:center;}
+.tb-stat{display:flex;flex-direction:column;align-items:center;}
+.tb-stat-label{font-family:var(--font);font-size:7px;color:var(--textd);letter-spacing:2px;}
+.tb-stat-val{font-family:var(--font);font-size:11px;color:var(--accent);}
+.tb-stat-val.green{color:var(--accent2);}
+.tb-stat-val.warn{color:var(--warn);}
+.tb-stat-val.critical{color:var(--critical);animation:critPulse 1s infinite;}
+@keyframes critPulse{0%,100%{opacity:1}50%{opacity:.4}}
+.tb-right{display:flex;gap:6px;align-items:center;}
+.mode-btn{font-family:var(--font);font-size:8px;letter-spacing:2px;padding:5px 12px;border:1px solid var(--border);background:transparent;color:var(--textd);cursor:pointer;transition:all .2s;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);}
+.mode-btn:hover{border-color:var(--accent);color:var(--accent);}
+.mode-btn.active{background:var(--accent);color:#000;border-color:var(--accent);font-weight:bold;}
+.enc-badge{font-family:var(--font);font-size:7px;padding:3px 8px;border:1px solid var(--accent2);color:var(--accent2);letter-spacing:2px;animation:blinkBorder 2s infinite;}
+@keyframes blinkBorder{0%,100%{border-color:var(--accent2);color:var(--accent2)}50%{border-color:rgba(0,255,157,.3);color:rgba(0,255,157,.4)}}
+
+/* MAP */
+#map-area{position:relative;overflow:hidden;background:#030609;}
+#map{position:absolute;inset:0;z-index:1;transition:border-radius .8s ease, box-shadow .8s ease;}
+
+/* GLOBE MASK */
+#globeMask{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;transition:opacity .8s ease;}
+#globeMask.active{opacity:1;}
+#globeAtmo{position:absolute;inset:0;border-radius:50%;pointer-events:none;z-index:4;opacity:0;transition:opacity .8s ease;
+  box-shadow:inset 0 0 80px rgba(0,100,200,.3),inset 0 0 160px rgba(0,50,150,.2),0 0 60px rgba(0,150,255,.15),0 0 120px rgba(0,100,200,.1);}
+#globeAtmo.active{opacity:1;}
+
+/* LEFT PANEL */
+#left-panel{position:absolute;left:0;top:0;bottom:0;width:230px;z-index:10;display:flex;flex-direction:column;gap:1px;pointer-events:all;background:rgba(3,6,9,.85);backdrop-filter:blur(6px);border-right:1px solid var(--border);}
+/* RIGHT PANEL */
+#right-panel{position:absolute;right:0;top:0;bottom:0;width:260px;z-index:10;display:flex;flex-direction:column;gap:1px;pointer-events:all;background:rgba(3,6,9,.85);backdrop-filter:blur(6px);border-left:1px solid var(--border);}
+/* BOTTOM STRIP */
+#bottom-strip{position:absolute;bottom:0;left:230px;right:260px;height:280px;z-index:10;background:rgba(3,6,9,.9);backdrop-filter:blur(6px);border-top:1px solid var(--border);display:grid;grid-template-columns:1fr;gap:0;}
+
+.panel-hdr{font-family:var(--font);font-size:8px;letter-spacing:2px;color:var(--accent);padding:7px 10px 5px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:rgba(0,240,255,.03);}
+.panel-hdr-right{font-size:7px;color:var(--textd);}
+.panel-hdr-live{font-size:7px;color:var(--accent2);animation:fadeInOut 1.5s infinite;}
+@keyframes fadeInOut{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Telemetry */
+.t-grid{padding:6px 10px;display:flex;flex-direction:column;gap:3px;}
+.t-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;}
+.t-label{font-family:var(--font);font-size:8px;color:var(--textd);}
+.t-val{font-family:var(--font);font-size:9px;}
+.t-bar{height:1.5px;background:rgba(255,255,255,.06);margin-top:2px;border-radius:1px;overflow:hidden;}
+.t-fill{height:100%;border-radius:1px;transition:width .8s cubic-bezier(.4,0,.2,1);}
+
+/* Radar */
+#radarWrap{display:flex;justify-content:center;align-items:center;padding:4px 0;flex:0 0 auto;}
+/* Globe 3D */
+#globeWrap{display:flex;justify-content:center;align-items:center;padding:4px 0;flex:0 0 auto;}
+.view-toggle{display:flex;gap:0;margin:0 10px;}
+.vt-btn{font-family:var(--font);font-size:7px;letter-spacing:1px;padding:3px 10px;border:1px solid var(--border);background:transparent;color:var(--textd);cursor:pointer;transition:all .2s;}
+.vt-btn:first-child{border-radius:2px 0 0 2px;}
+.vt-btn:last-child{border-radius:0 2px 2px 0;}
+.vt-btn.active{background:var(--accent);color:#000;border-color:var(--accent);}
+
+/* Alert feed */
+.alert-feed{flex:1;overflow:hidden;padding:4px 8px;}
+.a-item{font-family:var(--font);font-size:8px;padding:3px 6px;margin-bottom:2px;border-left:2px solid;line-height:1.5;border-radius:0 2px 2px 0;animation:slideInLeft .25s ease;}
+.a-d{border-color:var(--accent3);background:rgba(255,69,96,.08);color:#ff8fa3;}
+.a-c{border-color:var(--critical);background:rgba(255,0,40,.15);color:#ff4070;font-weight:bold;animation:slideInLeft .25s ease, criticalPulse 1s infinite;}
+.a-w{border-color:var(--warn);background:rgba(255,193,7,.08);color:#ffe082;}
+.a-i{border-color:var(--accent);background:rgba(0,240,255,.06);color:#80deea;}
+.a-o{border-color:var(--accent2);background:rgba(0,255,157,.06);color:#b9f6ca;}
+@keyframes slideInLeft{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
+@keyframes criticalPulse{0%,100%{background:rgba(255,0,40,.15)}50%{background:rgba(255,0,40,.3)}}
+
+/* Target list */
+.tgt-list{overflow:hidden;padding:4px 6px;flex:1;}
+.tgt-item{display:flex;gap:5px;align-items:center;padding:5px 6px;margin-bottom:2px;background:rgba(10,21,32,.7);border:1px solid var(--border);border-radius:2px;cursor:pointer;transition:all .2s;font-family:var(--font);}
+.tgt-item:hover{border-color:var(--accent);background:rgba(0,240,255,.05);}
+.tgt-item.critical{border-color:var(--critical);animation:tgtCritical 1.5s infinite;}
+@keyframes tgtCritical{0%,100%{border-color:var(--critical);background:rgba(255,0,40,.08)}50%{border-color:rgba(255,0,40,.3);background:rgba(255,0,40,.15)}}
+.tgt-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;animation:dotPulse 2s infinite;}
+@keyframes dotPulse{0%,100%{opacity:1}50%{opacity:.4}}
+.tgt-info{flex:1;min-width:0;}
+.tgt-id{font-size:8px;color:var(--accent2);}
+.tgt-pos{font-size:7px;color:var(--textd);margin-top:1px;}
+.tgt-badge{font-size:7px;padding:1px 5px;border-radius:1px;}
+.t-crit{background:rgba(255,0,40,.3);color:#ff4070;animation:critPulse 1s infinite;}
+.t-high{background:rgba(255,69,96,.2);color:#ff8fa3;}
+.t-med{background:rgba(255,193,7,.2);color:#ffe082;}
+.t-low{background:rgba(0,240,255,.15);color:#80deea;}
+
+/* Bottom panels */
+.bot-panel{overflow:hidden;position:relative;}
+.sig-wrap{display:flex;gap:2px;align-items:flex-end;}
+.s-bar{width:3px;border-radius:1px 1px 0 0;animation:sBarPulse 1.2s infinite;}
+@keyframes sBarPulse{0%,100%{opacity:.4}50%{opacity:1}}
+
+/* AI Stats */
+.ai-bar-wrap{padding:6px 10px;}
+.ai-row{margin-bottom:5px;}
+.ai-label-row{display:flex;justify-content:space-between;margin-bottom:2px;}
+.ai-label{font-family:var(--font);font-size:7px;color:var(--textd);}
+.ai-val{font-family:var(--font);font-size:7px;}
+.ai-bar{height:2px;background:rgba(255,255,255,.06);border-radius:1px;overflow:hidden;}
+.ai-fill{height:100%;border-radius:1px;transition:width 1s ease;}
+
+/* BOTTOM BAR */
+#botbar{background:rgba(3,6,9,.95);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 14px;}
+.bot-left{display:flex;gap:14px;}
+.bot-item{font-family:var(--font);font-size:8px;color:var(--textd);display:flex;align-items:center;gap:4px;}
+.bot-val{color:var(--accent);}
+.bot-status{font-family:var(--font);font-size:8px;color:var(--accent2);letter-spacing:1px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cmd-wrap{display:flex;align-items:center;gap:5px;}
+.cmd-prompt{color:var(--accent);font-family:var(--font);font-size:10px;}
+.cmd-in{background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--accent);font-family:var(--font);font-size:9px;outline:none;width:200px;padding:2px 4px;letter-spacing:1px;}
+.cmd-in::placeholder{color:var(--textd);}
+
+/* Leaflet overrides */
+.leaflet-control-attribution{display:none!important;}
+.leaflet-control-zoom{border:1px solid var(--border)!important;background:rgba(3,6,9,.9)!important;}
+.leaflet-control-zoom a{color:var(--accent)!important;background:transparent!important;border-color:var(--border)!important;font-family:var(--font)!important;}
+.l-popup .leaflet-popup-content-wrapper{background:rgba(3,6,9,.95);border:1px solid var(--accent);border-radius:3px;font-family:var(--font);color:var(--text);font-size:9px;}
+.l-popup .leaflet-popup-tip{background:var(--accent);}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.7)}}
+
+/* EXPLOSION EFFECT on map */
+.explosion-ring{border-radius:50%;border:2px solid var(--critical);position:absolute;pointer-events:none;animation:explode 1.5s ease-out forwards;}
+@keyframes explode{0%{width:0;height:0;opacity:1;border-width:3px}100%{width:120px;height:120px;opacity:0;border-width:1px;margin-left:-60px;margin-top:-60px}}
+
+/* MISSILE TRAIL marker */
+.missile-marker{width:36px;height:36px;filter:drop-shadow(0 0 12px rgba(255,0,40,.9)) drop-shadow(0 0 4px rgba(255,100,0,.6));animation:missileGlow .3s infinite alternate;}
+.missile-marker img{width:100%;height:100%;}
+.tank-marker{width:28px;height:28px;filter:drop-shadow(0 0 6px rgba(255,160,0,.6));}
+.tank-marker img{width:100%;height:100%;}
+@keyframes missileGlow{from{box-shadow:0 0 8px var(--critical)}to{box-shadow:0 0 20px var(--critical),0 0 40px rgba(255,0,40,.4)}}
+
+/* AIRCRAFT marker */
+.aircraft-marker{font-size:18px;filter:drop-shadow(0 0 6px var(--warn));transition:transform .5s linear;}
+
+/* DRONE marker */
+.drone-marker{width:10px;height:10px;border:2px solid var(--accent);transform:rotate(45deg);box-shadow:0 0 8px var(--accent);animation:droneSpin 3s linear infinite;}
+@keyframes droneSpin{from{transform:rotate(45deg)}to{transform:rotate(405deg)}}
+
+/* IMPACT PULSE on map */
+.impact-pulse{position:absolute;border-radius:50%;pointer-events:none;}
+.impact-inner{width:100%;height:100%;border-radius:50%;background:radial-gradient(circle,rgba(255,0,40,.6) 0%,rgba(255,100,0,.3) 40%,transparent 70%);animation:impactFade 2s ease-out forwards;}
+@keyframes impactFade{0%{transform:scale(0);opacity:1}50%{opacity:.8}100%{transform:scale(3);opacity:0}}
+
+/* THREAT COUNTER */
+.threat-counter{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:20;display:flex;gap:12px;pointer-events:none;}
+.tc-item{font-family:var(--font);font-size:8px;padding:4px 10px;border-radius:2px;border:1px solid;backdrop-filter:blur(4px);}
+.tc-crit{border-color:var(--critical);background:rgba(255,0,40,.15);color:var(--critical);}
+.tc-high{border-color:var(--accent3);background:rgba(255,69,96,.1);color:var(--accent3);}
+.tc-med{border-color:var(--warn);background:rgba(255,193,7,.1);color:var(--warn);}
+
+/* REAL AIRCRAFT (ADS-B) */
+.real-ac-marker{font-size:18px;color:#50e0ff;filter:drop-shadow(0 0 6px rgba(80,224,255,.9)) drop-shadow(0 0 12px rgba(0,180,255,.5));transition:transform .8s linear;}
+.real-ac-label{position:absolute;top:-16px;left:12px;font-family:var(--font);font-size:9px;font-weight:bold;color:#7df0ff;white-space:nowrap;letter-spacing:1px;pointer-events:none;text-shadow:0 0 6px rgba(0,200,255,.8),0 1px 2px rgba(0,0,0,.9);}
+.real-ac-alt{position:absolute;top:-4px;left:12px;font-family:var(--font);font-size:8px;color:#40d0a0;white-space:nowrap;pointer-events:none;text-shadow:0 0 4px rgba(0,200,150,.6),0 1px 2px rgba(0,0,0,.9);}
+
+/* SIREN INDICATOR */
+#sirenIndicator{position:fixed;bottom:40px;right:14px;z-index:9992;font-family:var(--font2);font-size:10px;color:var(--critical);letter-spacing:2px;padding:6px 14px;border:1px solid var(--critical);background:rgba(255,0,40,.15);border-radius:3px;cursor:pointer;display:none;animation:sirenBlink .5s infinite;}
+#sirenIndicator.active{display:block;}
+@keyframes sirenBlink{0%,100%{opacity:1;background:rgba(255,0,40,.15)}50%{opacity:.6;background:rgba(255,0,40,.3)}}
+
+/* CUBESAT 3D PANEL */
+.cs-btn{font-family:var(--font);font-size:7px;letter-spacing:1px;padding:2px 6px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;transition:all .15s;}
+.cs-btn:hover{background:var(--accent);color:#000;}
+.cs-btn.active{background:var(--accent2);color:#000;border-color:var(--accent2);}
+.cs-btn.warn{border-color:var(--warn);color:var(--warn);}
+.cs-btn.warn:hover{background:var(--warn);color:#000;}
+#csatCvs{width:100%;height:100%;display:block;}
+.csat-controls{position:absolute;bottom:4px;left:4px;right:4px;display:flex;gap:3px;justify-content:center;z-index:5;}
+.csat-status{position:absolute;top:26px;right:6px;font-family:var(--font);font-size:7px;color:var(--accent2);z-index:5;text-align:right;line-height:1.6;}
+
+/* FULLSCREEN 3D MODEL */
+#bottom-strip.fullscreen-3d{position:fixed!important;inset:0!important;z-index:9995!important;width:100vw!important;height:100vh!important;background:#030609!important;border:none!important;left:0!important;right:0!important;bottom:0!important;}
+#bottom-strip.fullscreen-3d .panel-hdr{position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(3,6,9,.85)!important;backdrop-filter:blur(8px);padding:10px 14px 8px;}
+#bottom-strip.fullscreen-3d .csat-status{top:34px;right:16px;font-size:10px;}
+#bottom-strip.fullscreen-3d .csat-controls{bottom:16px;}
+.cs-btn.fs-btn{font-size:8px;padding:3px 8px;}
+</style>
+</head>
+<body>
+
+<!-- PARTICLES -->
+<div id="particles"></div>
+
+<!-- BOOT -->
+<div id="boot" style="cursor:pointer;">
+  <div class="boot-logo">GÖLGE-1</div>
+  <div class="boot-sub">TAKTİK İSTİHBARAT // C2 SİSTEMİ v2.0</div>
+  <div id="bootClick" style="margin-top:30px;font-family:var(--font);font-size:12px;color:var(--accent);letter-spacing:4px;animation:fadeInOut 1.5s infinite;border:1px solid var(--accent);padding:10px 30px;border-radius:3px;">🔊 SİSTEMİ BAŞLAT</div>
+  <div class="boot-bar-wrap"><div class="boot-bar" id="bootBar"></div></div>
+  <div class="boot-line" id="bootLine"></div>
+</div>
+
+<!-- ALARM OVERLAY -->
+<div id="alarmOverlay">
+  <div class="alarm-bg"></div>
+  <div class="alarm-border"></div>
+  <div class="alarm-text" id="alarmText">⚠ FÜZE TESPİT EDİLDİ ⚠</div>
+</div>
+
+<!-- MISSILE BANNER -->
+<div id="missileBanner"><div class="scroll-text" id="bannerText"></div></div>
+<div id="missileTracker"></div>
+
+<!-- BATTERY WARNING OVERLAY -->
+<div id="batteryWarning" style="display:none;position:fixed;inset:0;z-index:9993;pointer-events:none;display:none;">
+  <div style="position:absolute;inset:0;background:rgba(255,0,40,0.1);animation:alarmFlash .8s ease infinite;"></div>
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+    <div style="font-family:var(--font2);font-size:48px;color:var(--critical);text-shadow:0 0 40px var(--critical);animation:critPulse 1s infinite;">⚠</div>
+    <div style="font-family:var(--font2);font-size:22px;color:var(--critical);letter-spacing:6px;text-shadow:0 0 20px var(--critical);margin:10px 0;">BATARYA KRİTİK</div>
+    <div style="font-family:var(--font);font-size:14px;color:var(--warn);letter-spacing:3px;">IDLE MODUNA GEÇİN — OTONOM GEÇİŞ: %10</div>
+    <div style="font-family:var(--font2);font-size:36px;color:var(--critical);margin-top:8px;" id="batWarningVal">15%</div>
+  </div>
+</div>
+
+<!-- SIREN INDICATOR (click to stop) -->
+<div id="sirenIndicator" onclick="stopSiren();this.classList.remove('active');">🔊 SİREN AKTİF — TIKLA VEYA "siren off"</div>
+
+<!-- MAIN UI -->
+<div id="ui">
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="tb-logo"><div class="logo-pulse"></div>GÖLGE-1</div>
+    <div class="tb-sep"></div>
+    <div class="tb-center">
+      <div class="tb-stat"><div class="tb-stat-label">DURUM</div><div class="tb-stat-val green" id="satStatus">OPR</div></div>
+      <div class="tb-stat"><div class="tb-stat-label">YÜKSEKLİK</div><div class="tb-stat-val" id="altVal">487 km</div></div>
+      <div class="tb-stat"><div class="tb-stat-label">HIZ</div><div class="tb-stat-val">7.61 km/s</div></div>
+      <div class="tb-stat"><div class="tb-stat-label">BATARYA</div><div class="tb-stat-val warn" id="batVal">78%</div></div>
+      <div class="tb-stat"><div class="tb-stat-label">TEHDİT</div><div class="tb-stat-val critical" id="threatVal">3 AKTİF</div></div>
+      <div class="tb-stat"><div class="tb-stat-label">SONR. GEÇİŞ</div><div class="tb-stat-val" id="passTimer">00:42:17</div></div>
+      <div class="tb-stat"><div class="tb-stat-label">UTC</div><div class="tb-stat-val" id="utcClock">--:--:--</div></div>
+      <div class="tb-stat"><div class="tb-stat-label">TUR</div><div class="tb-stat-val green" id="orbNum">1247</div></div>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-right">
+      <button class="mode-btn active" onclick="setMode(0,this)">OPTİK</button>
+      <button class="mode-btn" onclick="setMode(1,this)">RADAR</button>
+      <button class="mode-btn" onclick="setMode(2,this)">RÖLE</button>
+      <div class="tb-sep"></div>
+      <div class="enc-badge">AES-256</div>
+    </div>
+  </div>
+
+  <!-- MAP AREA -->
+  <div id="map-area">
+    <div id="map"></div>
+    <!-- Globe mask overlay -->
+    <div id="globeMask">
+      <svg width="100%" height="100%" style="position:absolute;inset:0;">
+        <defs>
+          <radialGradient id="gmask" cx="50%" cy="50%" r="50%">
+            <stop offset="65%" stop-color="transparent"/>
+            <stop offset="78%" stop-color="rgba(0,20,50,0.5)"/>
+            <stop offset="88%" stop-color="rgba(3,6,9,0.85)"/>
+            <stop offset="95%" stop-color="#030609"/>
+          </radialGradient>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#gmask)"/>
+      </svg>
+    </div>
+    <div id="globeAtmo"></div>
+
+    <!-- THREAT COUNTER -->
+    <div class="threat-counter" id="threatCounter">
+      <div class="tc-item tc-crit">FÜZE: <span id="tcMissile">0</span></div>
+      <div class="tc-item tc-high">UÇAK: <span id="tcAircraft">0</span></div>
+      <div class="tc-item tc-med">İHA: <span id="tcDrone">0</span></div>
+      <div class="tc-item" style="border-color:var(--accent2);background:rgba(0,255,157,.1);color:var(--accent2);">ADS-B: <span id="tcReal">0</span></div>
+    </div>
+
+    <!-- LEFT PANEL -->
+    <div id="left-panel">
+      <div>
+        <div class="panel-hdr">TELEMETRİ <span class="panel-hdr-live">● CANLI</span></div>
+        <div class="t-grid" id="telemGrid"></div>
+      </div>
+      <div>
+        <div class="panel-hdr">YÖRÜNGE <span class="panel-hdr-right">LEO SSO</span></div>
+        <div class="t-grid">
+          <div class="t-row"><span class="t-label">İNKLİNASYON</span><span class="t-val" style="color:var(--accent)">97.4°</span></div>
+          <div class="t-row"><span class="t-label">RAAN</span><span class="t-val" id="raanVal" style="color:var(--accent)">184.3°</span></div>
+          <div class="t-row"><span class="t-label">EĞRİSEL</span><span class="t-val" style="color:var(--accent)">0.0012</span></div>
+          <div class="t-row"><span class="t-label">PERİYOT</span><span class="t-val" style="color:var(--accent)">94.2 dk</span></div>
+          <div class="t-row"><span class="t-label">GÖRÜŞ MENZİLİ</span><span class="t-val" style="color:var(--accent2)">2.500 km</span></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+        <div class="panel-hdr">ALARM AKIŞI <span class="panel-hdr-right" id="alertBadge">0</span></div>
+        <div class="alert-feed" id="alertFeed"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div id="right-panel">
+      <!-- View toggle -->
+      <div class="panel-hdr">
+        GÖRÜNÜM
+        <div class="view-toggle">
+          <button class="vt-btn active" id="vtRadar" onclick="setView('radar')">RADAR</button>
+          <button class="vt-btn" id="vtGlobe" onclick="setView('globe')">3D KÜRE</button>
+        </div>
+      </div>
+      <!-- Radar -->
+      <div id="radarWrap"><canvas id="radarCvs" width="220" height="220"></canvas></div>
+      <!-- 3D Globe -->
+      <div id="globeWrap" style="display:none;"><canvas id="globe3d" width="220" height="220" style="border-radius:50%;"></canvas></div>
+      <!-- AI SCAN KOORDİNAT -->
+      <div>
+        <div class="panel-hdr">AI TARAMA <span class="panel-hdr-right" id="scanStatus">HAZIR</span></div>
+        <div style="padding:6px 10px;">
+          <div style="display:flex;gap:4px;margin-bottom:4px;">
+            <div style="flex:1;">
+              <div style="font-family:var(--font);font-size:7px;color:var(--textd);margin-bottom:2px;">LAT (Enlem)</div>
+              <input type="number" step="0.01" id="scanLat" value="39.93" style="width:100%;background:rgba(0,240,255,.05);border:1px solid var(--border);color:var(--accent);font-family:var(--font);font-size:10px;padding:4px 6px;border-radius:2px;outline:none;" placeholder="39.93">
+            </div>
+            <div style="flex:1;">
+              <div style="font-family:var(--font);font-size:7px;color:var(--textd);margin-bottom:2px;">LON (Boylam)</div>
+              <input type="number" step="0.01" id="scanLon" value="32.85" style="width:100%;background:rgba(0,240,255,.05);border:1px solid var(--border);color:var(--accent);font-family:var(--font);font-size:10px;padding:4px 6px;border-radius:2px;outline:none;" placeholder="32.85">
+            </div>
+          </div>
+          <button onclick="startAIScan()" style="width:100%;padding:6px;background:rgba(255,69,96,.15);border:1px solid var(--accent3);color:var(--accent3);font-family:var(--font);font-size:9px;letter-spacing:2px;cursor:pointer;border-radius:2px;transition:all .2s;" onmouseover="this.style.background='rgba(255,69,96,.3)'" onmouseout="this.style.background='rgba(255,69,96,.15)'">🔍 AI TARAMA BAŞLAT</button>
+        </div>
+      </div>
+      <!-- Targets / Battery -->
+      <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;" id="tgtPanel">
+        <div class="panel-hdr" id="tgtPanelHdr">TESPİT LİSTESİ <span class="panel-hdr-right" id="tgtBadge">0 HEDEF</span></div>
+        <div class="tgt-list" id="tgtList"></div>
+      </div>
+      <!-- Battery Panel (her zaman görünür) -->
+      <div style="display:flex;flex-direction:column;overflow:hidden;" id="batteryPanel">
+        <div class="panel-hdr">BATARYA DURUMU <span class="panel-hdr-right" id="batModeBadge" style="color:var(--accent3)">HARCANYOR</span></div>
+        <div style="padding:8px 10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="font-family:var(--font);font-size:8px;color:var(--textd);">ŞARJ SEVİYESİ</span>
+            <span style="font-family:var(--font2);font-size:18px;font-weight:bold;" id="batPercent">85%</span>
+          </div>
+          <div style="height:8px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden;margin-bottom:8px;">
+            <div id="batBar" style="height:100%;border-radius:4px;transition:width .5s ease,background .5s;width:85%;background:var(--accent2);"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-family:var(--font);font-size:7px;color:var(--textd);margin-bottom:4px;">
+            <span>GÜÇ TÜKETİMİ</span><span id="batDrain" style="color:var(--accent3);">-12.4 W</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-family:var(--font);font-size:7px;color:var(--textd);margin-bottom:4px;">
+            <span>GÜNEŞ ÜRETİMİ</span><span id="batSolar" style="color:var(--textd);">0 W</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-family:var(--font);font-size:7px;color:var(--textd);margin-bottom:4px;">
+            <span>KALAN SÜRE</span><span id="batRemain" style="color:var(--warn);">--:--</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-family:var(--font);font-size:7px;color:var(--textd);">
+            <span>SICAKLIK</span><span id="batTemp" style="color:var(--accent);">+24°C</span>
+          </div>
+        </div>
+      </div>
+      <!-- AI -->
+      <div>
+        <div class="panel-hdr">AI PERFORMANS <span class="panel-hdr-right">Myriad 2 VPU</span></div>
+        <div class="ai-bar-wrap" id="aiWrap"></div>
+      </div>
+    </div>
+
+    <!-- BOTTOM STRIP — 3D MODEL TAM GENİŞLİK -->
+    <div id="bottom-strip">
+      <div class="bot-panel" style="position:relative;overflow:hidden;grid-column:1/-1;">
+        <div class="panel-hdr" style="font-size:7px;">GÖLGE-1 3D MODEL
+          <div style="display:flex;gap:3px;">
+            <button class="cs-btn" onclick="deployPanels(0)">AÇ</button>
+            <button class="cs-btn" onclick="deployPanels(90)">KAPAT</button>
+            <button class="cs-btn" onclick="spinPanels()">DÖN</button>
+            <button class="cs-btn warn" id="antennaBtn" onclick="toggleAntennas()">ANTEN</button>
+            <button class="cs-btn" onclick="resetCsatView()">↺</button>
+            <button class="cs-btn fs-btn" id="fsBtn" onclick="toggleFullscreen3D()">⛶</button>
+            <button class="cs-btn" onclick="startLaunch()" style="background:rgba(255,69,96,.15);border-color:var(--accent3);color:var(--accent3);">🚀</button>
+          </div>
+        </div>
+        <!-- FIRLATMA OVERLAY -->
+        <div id="launchOverlay" style="display:none;position:absolute;inset:0;z-index:20;pointer-events:none;">
+          <div id="launchCountdown" style="position:absolute;top:45%;left:50%;transform:translate(-50%,-50%);font-family:var(--font2);font-size:64px;color:var(--accent);text-shadow:0 0 40px var(--accent),0 0 80px rgba(0,240,255,.3);text-align:center;"></div>
+          <div id="launchPhaseText" style="position:absolute;top:58%;left:50%;transform:translateX(-50%);font-family:var(--font);font-size:11px;color:var(--accent2);letter-spacing:4px;text-shadow:0 0 15px var(--accent2);white-space:nowrap;"></div>
+          <div id="launchAlt" style="position:absolute;top:12px;right:12px;font-family:var(--font);font-size:9px;color:var(--warn);text-align:right;line-height:1.8;"></div>
+        </div>
+        <div class="csat-status" id="csatStatus">
+          PANEL: KAPALI<br>ANTEN: KAPALI<br>ADCS: AKTİF
+        </div>
+        <canvas id="csatCvs"></canvas>
+        <div class="csat-controls">
+          <button class="cs-btn" onclick="csatRotate('yaw-')">◄</button>
+          <button class="cs-btn" onclick="csatRotate('pitch-')">▲</button>
+          <button class="cs-btn" onclick="csatRotate('pitch+')">▼</button>
+          <button class="cs-btn" onclick="csatRotate('yaw+')">►</button>
+          <button class="cs-btn" onclick="csatRotate('roll')">↻</button>
+          <span style="width:1px;height:16px;background:var(--border);margin:0 4px;"></span>
+          <button class="cs-btn" id="modeIdleBtn" onclick="setCsatMode('IDLE')" style="background:var(--accent);color:#000;">IDLE</button>
+          <button class="cs-btn" id="modeScanBtn" onclick="setCsatMode('AI_SCAN')">AI_SCAN</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM BAR -->
+  <div id="botbar">
+    <div class="bot-left">
+      <div class="bot-item">EPS: <span class="bot-val" id="epsV">12.4W</span></div>
+      <div class="bot-item">SICAKLIK: <span class="bot-val" id="tempV">+24°C</span></div>
+      <div class="bot-item">VPU: <span class="bot-val" id="vpuV">71%</span></div>
+      <div class="bot-item">PAKET: <span class="bot-val" id="pktV">1247/1248</span></div>
+      <div class="bot-item">GECİKME: <span class="bot-val">2.7ms</span></div>
+      <div class="sig-wrap" id="sigBars"></div>
+    </div>
+    <div class="bot-status" id="botStatus">■ GÖLGE-1 OPERASYONEL — SİSTEM HAZIR</div>
+    <div class="cmd-wrap">
+      <span class="cmd-prompt">&gt;</span>
+      <input class="cmd-in" id="cmdIn" placeholder="komut..." onkeydown="handleCmd(event)">
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── BOOT — Tıkla ile başla (ses izni + sistem) ─────────────
+var bootClicked=false;
+document.getElementById('boot').onclick=function(){
+  if(bootClicked)return;
+  bootClicked=true;
+  // Ses kilidini aç
+  try{
+    sirenAudio=new Audio('siren-alarm-artificial-sound.mp3');
+    sirenAudio.loop=true;sirenAudio.volume=0;
+    sirenAudio.play().then(function(){
+      sirenAudio.pause();sirenAudio.currentTime=0;sirenAudio.volume=0.7;
+      audioUnlocked=true;
+    }).catch(function(){});
+  }catch(e){}
+  // Boot animasyonu başlat
+  document.getElementById('bootClick').style.display='none';
+  var bootP=0;
+  var bootLines=['KERNEL YÜKLÜYOR...','OBC STM32 BAŞLATILIYOR...','ADCS KALİBRASYON...','RF MODÜL HAZIR...','Myriad 2 VPU BAĞLANIYOR...','YOLOv8 MODELİ YÜKLENİYOR...','AES-256 ŞİFRELEME AKTİF...','THREE.JS KÜRE RENDER...','TEHDİT ALGILAMA AKTİF...','SİSTEM HAZIR.'];
+  var bootBar=document.getElementById('bootBar'),bootLine=document.getElementById('bootLine');
+  var bootInterval=setInterval(function(){
+    bootP+=10;bootBar.style.width=bootP+'%';
+    bootLine.textContent=bootLines[Math.floor(bootP/10)-1]||'TAMAMLANDI.';
+    if(bootP>=100){clearInterval(bootInterval);setTimeout(function(){
+      document.getElementById('boot').style.opacity='0';document.getElementById('boot').style.transition='opacity .6s';
+      setTimeout(function(){document.getElementById('boot').style.display='none';document.getElementById('ui').classList.add('visible');initApp();},600);
+    },400);}
+  },180);
+};
+
+// ─── PARTICLES ──────────────────────────────────────────────────
+(function(){
+  var c=document.getElementById('particles');
+  if(!c)return;
+  for(var i=0;i<30;i++){
+    var p=document.createElement('div');p.className='particle';
+    p.style.left=Math.random()*100+'%';p.style.animationDuration=(8+Math.random()*12)+'s';
+    p.style.animationDelay=Math.random()*10+'s';p.style.width=p.style.height=(1+Math.random()*1.5)+'px';
+    c.appendChild(p);
+  }
+})();
+
+// ─── AUDIO / SİREN SİSTEMİ (MP3) ───────────────────────────────
+let sirenAudio=null;
+let sirenActive=false;
+
+// MP3 siren — aynı klasördeki dosyayı kullan
+function initSirenAudio(){
+  sirenAudio=new Audio('siren-alarm-artificial-sound.mp3');
+  sirenAudio.loop=true;
+  sirenAudio.volume=0.7;
+  // Preload
+  sirenAudio.load();
+}
+initSirenAudio();
+
+// Ses sistemi: sayfa acildiginda overlay gosterilir, kullanici tiklar, unlock olur
+let audioUnlocked=false;
+let pendingSiren=false;
+
+function doAudioUnlock(){
+  if(audioUnlocked)return;
+  try{
+    sirenAudio.volume=0;
+    sirenAudio.play().then(()=>{
+      sirenAudio.pause();sirenAudio.currentTime=0;sirenAudio.volume=0.7;
+      audioUnlocked=true;
+    }).catch(()=>{});
+  }catch(e){}
+}
+
+function startSiren(){
+  if(sirenActive)return;
+  sirenActive=true;
+  sirenAudio.currentTime=0;
+  sirenAudio.volume=0.7;
+  var playPromise=sirenAudio.play();
+  if(playPromise){
+    playPromise.then(function(){
+      audioUnlocked=true;
+    }).catch(function(){
+      sirenActive=false;
+      // Kullanıcı etkileşimi gerekiyor — bir kere tıklayınca çalacak
+      document.addEventListener('click',function retry(){
+        document.removeEventListener('click',retry);
+        audioUnlocked=true;
+        startSiren();
+      },{once:true});
+    });
+  }
+  addAlert('a-c','🔊 SİREN AKTİF — Kapatmak için: siren off');
+  document.getElementById('sirenIndicator').classList.add('active');
+}
+
+function stopSiren(){
+  if(!sirenActive)return;
+  sirenActive=false;
+  sirenAudio.pause();
+  sirenAudio.currentTime=0;
+  addAlert('a-o','🔇 SİREN KAPATILDI — Sistem normale döndü');
+  document.getElementById('botStatus').textContent='■ SİREN KAPATILDI — SİSTEM NORMAL';
+  document.getElementById('sirenIndicator').classList.remove('active');
+}
+
+function playDetectBeep(){
+  // Kısa detect sesi — AudioContext ile
+  const AC=window.AudioContext||window.webkitAudioContext;
+  const ctx=new AC();
+  const o=ctx.createOscillator(),g=ctx.createGain();
+  o.connect(g);g.connect(ctx.destination);
+  o.type='sine';o.frequency.setValueAtTime(1200,ctx.currentTime);
+  g.gain.setValueAtTime(0.05,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.15);
+  o.start();o.stop(ctx.currentTime+0.15);
+}
+
+// ─── APP STATE ──────────────────────────────────────────────────
+const ST={
+  mode:0,tick:0,radarAngle:0,viewMode:'radar',
+  satLat:39.5,satLon:32.8,satLonV:0.006,
+  targets:[],missiles:[],aircrafts:[],drones:[],
+  map:null,satMarker:null,coverCircle:null,
+  missileCount:0,aircraftCount:0,droneCount:0,
+  realAircraft:[],realAcMarkers:{},
+  globe:null,globeScene:null,globeCamera:null,globeRenderer:null,
+};
+
+// ─── TARGETS ────────────────────────────────────────────────────
+const TGTS_INIT=[];
+
+const AIRCRAFT_INIT=[];
+
+const MISSILE_SCENARIOS=[
+  {id:'MSL',originLat:34.0,originLon:44.0,targetLat:39.0,targetLon:35.0,type:'BALİSTİK FÜZE',speed:0.03},
+  {id:'MSL',originLat:35.5,originLon:25.0,targetLat:38.5,targetLon:30.0,type:'CRUISE FÜZE',speed:0.02},
+  {id:'MSL',originLat:42.0,originLon:44.5,targetLat:40.0,targetLon:38.0,type:'BALİSTİK FÜZE',speed:0.025},
+  {id:'MSL',originLat:33.5,originLon:36.0,targetLat:37.0,targetLon:33.0,type:'TAKTİK FÜZE',speed:0.035},
+];
+
+// ─── INIT ───────────────────────────────────────────────────────
+function initApp(){
+  initMap();initTelemetry();initAI();initSigBars();
+  try{initGlobe3D();}catch(e){console.warn('Globe3D init error:',e);}
+  try{initCubeSat();}catch(e){console.warn('CubeSat init error:',e);}
+  loop();alertLoop();clockLoop();
+  // ADS-B gerçek hava trafiği
+  setTimeout(()=>fetchRealAirTraffic(),3000);
+  setInterval(()=>adsbAutoRefresh(),20000);
+  // Socket.IO bağlantısı
+  initSocket();
+  
+}
+
+// ─── SOCKET.IO — SUNUCU BAĞLANTISI ─────────────────────────────
+function initSocket(){
+  if(typeof io==='undefined'){console.warn('Socket.IO yok, standalone mod');return;}
+  const socket=io({query:{type:'station'}});
+  ST.socket=socket;
+
+  socket.on('connect',()=>{
+    addAlert('a-o','SUNUCU BAĞLANTISI KURULDU — WebSocket aktif');
+    document.getElementById('botStatus').textContent='■ SUNUCU BAĞLI — MOBİL KONTROL HAZIR';
+  });
+  socket.on('disconnect',()=>{
+    addAlert('a-d','SUNUCU BAĞLANTISI KESİLDİ!');
+  });
+
+  // Mobil → Füze
+  socket.on('missile_incoming',(data)=>{
+    launchMissileFromSocket(data);
+  });
+  // Mobil → Uçak/İHA
+  socket.on('aircraft_detected',(data)=>{
+    spawnAircraftFromSocket(data);
+  });
+  // Mobil → Siren
+  socket.on('siren_start',()=>startSiren());
+  socket.on('siren_stop',()=>stopSiren());
+
+  // Mobil → CubeSat kontrol
+  socket.on('cubesat_mode_change',(d)=>{if(d.mode)setCsatMode(d.mode);});
+  socket.on('cubesat_panel_update',(d)=>{
+    if(d.action==='deploy')deployPanels(0);
+    else if(d.action==='retract')deployPanels(90);
+  });
+  socket.on('cubesat_antenna_update',(d)=>{
+    if(d.action==='deploy'){CSAT.antennaTarget=1;CSAT.antennasDeployed=true;}
+    else if(d.action==='retract'){CSAT.antennaTarget=0;CSAT.antennasDeployed=false;}
+  });
+  // Mobil → ADS-B
+  socket.on('adsb_update',()=>fetchRealAirTraffic());
+  // Mobil → Mod değiştir
+  socket.on('mode_change',(data)=>{
+    setMode(data.mode,document.querySelectorAll('.mode-btn')[data.mode]);
+  });
+
+  // Periyodik durum gönder
+  setInterval(()=>{
+    if(socket.connected){
+      socket.emit('station_status',{
+        missiles:ST.missiles.filter(m=>m.alive).length,
+        aircrafts:ST.aircrafts.filter(a=>a.alive).length,
+        drones:ST.drones.filter(d=>d.alive).length,
+        realAc:ST.realAircraft.length,
+      });
+    }
+  },2000);
+}
+
+function launchMissileFromSocket(data){
+  ST.missileCount++;
+  const mid=`MSL-${String(ST.missileCount).padStart(3,'0')}`;
+  const sc={...data,speed:data.type==='TAKTİK FÜZE'?0.035:data.type==='CRUISE FÜZE'?0.02:0.025};
+
+  triggerAlarm(`⚠ ${sc.type.toUpperCase()} TESPİT — ${mid} ⚠`);
+  addAlert('a-c',`${mid}: ${sc.type} — MOBİL KONTROLDEN FIRLATILDI!`);
+  startSiren();
+
+  document.getElementById('ui').classList.add('shake');
+  setTimeout(()=>document.getElementById('ui').classList.remove('shake'),500);
+
+  const missileIcon=L.divIcon({html:`<div class="missile-marker"><img src="/icons/missile.svg"></div>`,iconSize:[36,36],iconAnchor:[18,18],className:''});
+  const marker=L.marker([sc.originLat,sc.originLon],{icon:missileIcon,zIndexOffset:2000}).addTo(ST.map);
+  const trail=L.polyline([[sc.originLat,sc.originLon]],{color:'#ff0040',weight:2,opacity:0.8}).addTo(ST.map);
+  const trailGlow=L.polyline([[sc.originLat,sc.originLon]],{color:'#ff6040',weight:4,opacity:0.3}).addTo(ST.map);
+  const dangerZone=L.circle([sc.targetLat,sc.targetLon],{radius:50000,color:'#ff0040',weight:1,fillColor:'#ff0040',fillOpacity:0.1,dashArray:'6 4'}).addTo(ST.map);
+
+  const missile={id:mid,...sc,marker,trail,trailGlow,dangerZone,progress:0,alive:true,pts:[]};
+  ST.missiles.push(missile);
+  ST.map.flyTo([sc.originLat,sc.originLon],9,{animate:true,duration:0.6});
+  updateTargetList();
+}
+
+function spawnAircraftFromSocket(data){
+  const typeMap={
+    'SAVAŞ UÇAĞI':{threat:'CRITICAL',color:'#ff0040',speed:0.012,icon:'✈'},
+    'BOMBER':{threat:'CRITICAL',color:'#ff0040',speed:0.006,icon:'✈'},
+    'İHA':{threat:'MED',color:'#00f0ff',speed:0.004,icon:'◆'},
+  };
+  const t=typeMap[data.type]||typeMap['SAVAŞ UÇAĞI'];
+  const edges=[
+    {lat:35+Math.random()*6,lon:24,heading:45+Math.random()*30},
+    {lat:35+Math.random()*6,lon:45,heading:200+Math.random()*40},
+    {lat:43,lon:28+Math.random()*10,heading:160+Math.random()*40},
+    {lat:34,lon:30+Math.random()*10,heading:350+Math.random()*20},
+  ];
+  const e=edges[Math.floor(Math.random()*edges.length)];
+  const cnt=ST.aircrafts.length+ST.drones.length;
+  addAircraft({id:`AC-${String(100+cnt).padStart(3,'0')}`,lat:e.lat,lon:e.lon,type:data.type,...t,heading:e.heading});
+}
+
+// ─── MAP ────────────────────────────────────────────────────────
+function initMap(){
+  ST.map=L.map('map',{zoomControl:true,attributionControl:false,worldCopyJump:true}).setView([39.5,32.8],6);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,opacity:0.85}).addTo(ST.map);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,opacity:0.4}).addTo(ST.map);
+  document.getElementById('map').style.filter='brightness(0.85) contrast(1.1) saturate(1.1)';
+
+  const satIcon=L.divIcon({html:`<div style="width:14px;height:14px;border:2px solid #00ff9d;border-radius:50%;background:rgba(0,255,157,.3);box-shadow:0 0 12px #00ff9d;"></div>`,iconSize:[14,14],iconAnchor:[7,7],className:''});
+  ST.satMarker=L.marker([ST.satLat,ST.satLon],{icon:satIcon,zIndexOffset:1000}).addTo(ST.map);
+
+  // Globe effect on zoom
+  ST.map.on('zoomend',updateGlobeEffect);
+  ST.map.on('zoom',updateGlobeEffect);
+}
+
+function updateGlobeEffect(){
+  const z=ST.map.getZoom();
+  const mask=document.getElementById('globeMask');
+  const atmo=document.getElementById('globeAtmo');
+  const mapEl=document.getElementById('map');
+  if(z<=4){
+    mask.classList.add('active');
+    atmo.classList.add('active');
+    mapEl.style.borderRadius='50%';
+    mapEl.style.boxShadow='0 0 80px rgba(0,100,200,.2), inset 0 0 60px rgba(0,0,0,.4)';
+  } else if(z<=6){
+    const t=(z-4)/2;
+    mask.style.opacity=1-t;mask.classList.add('active');
+    atmo.style.opacity=1-t;atmo.classList.add('active');
+    const br=Math.round(50-t*50);
+    mapEl.style.borderRadius=br+'%';
+    mapEl.style.boxShadow=t<0.5?'0 0 80px rgba(0,100,200,.2)':'none';
+  } else {
+    mask.classList.remove('active');mask.style.opacity='';
+    atmo.classList.remove('active');atmo.style.opacity='';
+    mapEl.style.borderRadius='0';
+    mapEl.style.boxShadow='none';
+  }
+}
+
+function updateSatOnMap(){
+  ST.satLon+=ST.satLonV;
+  if(ST.satLon>45)ST.satLon=25;
+  if(ST.satMarker){
+    ST.satMarker.setLatLng([ST.satLat,ST.satLon]);
+  }
+}
+
+// ─── TARGETS ────────────────────────────────────────────────────
+function initTargets(){
+  ST.targets=TGTS_INIT.map(t=>{
+    const icon=L.divIcon({html:`<div style="position:relative"><div style="width:10px;height:10px;background:${t.color};clip-path:polygon(50% 0%,0% 100%,100% 100%);"></div><div style="position:absolute;top:-4px;left:-4px;width:18px;height:18px;border:1px solid ${t.color};border-radius:50%;opacity:.5;animation:dotPulse 2s infinite;"></div></div>`,iconSize:[10,10],iconAnchor:[5,10],className:''});
+    const marker=L.marker([t.lat,t.lon],{icon}).addTo(ST.map);
+    marker.bindPopup(`<div style="font-family:var(--font);font-size:9px;color:#b8cfe0;min-width:140px;"><div style="color:#00ff9d;margin-bottom:4px;">${t.id} ${t.icon}</div><div>TİP: ${t.type}</div><div>LAT: ${t.lat}°N LON: ${t.lon}°E</div><div style="color:${t.color};margin-top:4px;">TEHDİT: ${t.threat}</div></div>`,{className:'l-popup'});
+    return{...t,marker};
+  });
+  updateTargetList();
+}
+
+// ─── AIRCRAFT SYSTEM ────────────────────────────────────────────
+function initAircrafts(){
+  AIRCRAFT_INIT.forEach(a=>addAircraft(a));
+}
+function addAircraft(a){
+  const isJet=a.type==='SAVAŞ UÇAĞI'||a.type==='UÇAK';
+  const html=isJet?`<div class="aircraft-marker" style="color:${a.color};transform:rotate(${a.heading}deg);">✈</div>`:`<div class="drone-marker" style="border-color:${a.color};box-shadow:0 0 8px ${a.color};"></div>`;
+  const icon=L.divIcon({html,iconSize:[18,18],iconAnchor:[9,9],className:''});
+  const marker=L.marker([a.lat,a.lon],{icon,zIndexOffset:500}).addTo(ST.map);
+
+  // Trail
+  const trail=L.polyline([[a.lat,a.lon]],{color:a.color,weight:1,opacity:0.4,dashArray:'4 4'}).addTo(ST.map);
+
+  const obj={...a,marker,trail,trailPts:[[a.lat,a.lon]],alive:true};
+  if(a.type==='İHA')ST.drones.push(obj);
+  else ST.aircrafts.push(obj);
+
+  updateTargetList();
+  addAlert('a-w',`${a.id}: ${a.type} TESPİT — HDG ${a.heading}° — İZLEME BAŞLADI`);
+  playDetectBeep();
+}
+function updateAircrafts(){
+  [...ST.aircrafts,...ST.drones].forEach(a=>{
+    if(!a.alive)return;
+    const hRad=a.heading*Math.PI/180;
+    a.lat+=Math.cos(hRad)*a.speed*0.3;
+    a.lon+=Math.sin(hRad)*a.speed*0.3;
+    // Slight heading variation
+    a.heading+=(Math.random()-0.5)*2;
+    a.marker.setLatLng([a.lat,a.lon]);
+    // Update icon rotation for aircraft
+    const el=a.marker.getElement();
+    if(el){const m=el.querySelector('.aircraft-marker');if(m)m.style.transform=`rotate(${a.heading}deg)`;}
+    // Trail
+    a.trailPts.push([a.lat,a.lon]);
+    if(a.trailPts.length>80)a.trailPts.shift();
+    a.trail.setLatLngs(a.trailPts);
+    // Remove if out of bounds
+    if(a.lat<30||a.lat>46||a.lon<20||a.lon>50){a.alive=false;ST.map.removeLayer(a.marker);ST.map.removeLayer(a.trail);}
+  });
+  ST.aircrafts=ST.aircrafts.filter(a=>a.alive);
+  ST.drones=ST.drones.filter(a=>a.alive);
+}
+function spawnNewAircraft(){
+  const types=[
+    {type:'UÇAK',threat:'HIGH',color:'#ffc107',speed:0.008,icon:'✈'},
+    {type:'SAVAŞ UÇAĞI',threat:'CRITICAL',color:'#ff0040',speed:0.012,icon:'✈'},
+    {type:'İHA',threat:'MED',color:'#00f0ff',speed:0.004,icon:'◆'},
+    {type:'BOMBER',threat:'CRITICAL',color:'#ff0040',speed:0.006,icon:'✈'},
+  ];
+  const t=types[Math.floor(Math.random()*types.length)];
+  const edges=[
+    {lat:35+Math.random()*6,lon:24,heading:45+Math.random()*30},
+    {lat:35+Math.random()*6,lon:45,heading:200+Math.random()*40},
+    {lat:43,lon:28+Math.random()*10,heading:160+Math.random()*40},
+    {lat:34,lon:30+Math.random()*10,heading:350+Math.random()*20},
+  ];
+  const e=edges[Math.floor(Math.random()*edges.length)];
+  const cnt=ST.aircrafts.length+ST.drones.length;
+  addAircraft({id:`AC-${String(100+cnt).padStart(3,'0')}`,lat:e.lat,lon:e.lon,...t,heading:e.heading});
+}
+
+// ─── MISSILE SYSTEM ─────────────────────────────────────────────
+function launchMissile(){
+  const sc=MISSILE_SCENARIOS[Math.floor(Math.random()*MISSILE_SCENARIOS.length)];
+  ST.missileCount++;
+  const mid=`MSL-${String(ST.missileCount).padStart(3,'0')}`;
+
+  // Alarm!
+  triggerAlarm(`⚠ ${sc.type.toUpperCase()} TESPİT — ${mid} ⚠`);
+  addAlert('a-c',`${mid}: ${sc.type} FIRLATILDI — KRİTİK TEHDİT — INTERCEPT PROTOKOLÜ`);
+  startSiren();
+
+  // Screen shake
+  document.getElementById('ui').classList.add('shake');
+  setTimeout(()=>document.getElementById('ui').classList.remove('shake'),500);
+
+  // Create missile on map
+  const missileIcon=L.divIcon({html:`<div class="missile-marker"><img src="/icons/missile.svg"></div>`,iconSize:[36,36],iconAnchor:[18,18],className:''});
+  const marker=L.marker([sc.originLat,sc.originLon],{icon:missileIcon,zIndexOffset:2000}).addTo(ST.map);
+  const trail=L.polyline([[sc.originLat,sc.originLon]],{color:'#ff0040',weight:2,opacity:0.8}).addTo(ST.map);
+  const trailGlow=L.polyline([[sc.originLat,sc.originLon]],{color:'#ff6040',weight:4,opacity:0.3}).addTo(ST.map);
+
+  // Danger zone circle at target
+  const dangerZone=L.circle([sc.targetLat,sc.targetLon],{radius:50000,color:'#ff0040',weight:1,fillColor:'#ff0040',fillOpacity:0.1,dashArray:'6 4',className:'pulse-circle'}).addTo(ST.map);
+
+  const missile={id:mid,...sc,marker,trail,trailGlow,dangerZone,progress:0,alive:true,pts:[]};
+  ST.missiles.push(missile);
+  updateTargetList();
+  // fuzeye zoom yap ve takibe al
+  ST.map.flyTo([sc.originLat,sc.originLon],9,{animate:true,duration:0.6});
+}
+
+function updateMissiles(){
+  ST.missiles.forEach(m=>{
+    if(!m.alive)return;
+    m.progress+=m.speed*0.016;
+    if(m.progress>=1){
+      // IMPACT!
+      m.alive=false;
+      ST.map.removeLayer(m.marker);
+      setTimeout(()=>{ST.map.removeLayer(m.trail);ST.map.removeLayer(m.trailGlow);ST.map.removeLayer(m.dangerZone);},5000);
+
+      // Explosion effect
+      createExplosion(m.targetLat,m.targetLon);
+      addAlert('a-c',`${m.id}: HEDEF BÖLGESİNE ULAŞTI — İMHA RAPORU BEKLENİYOR`);
+      document.getElementById('ui').classList.add('shake');
+      setTimeout(()=>document.getElementById('ui').classList.remove('shake'),600);
+      updateTargetList();
+      return;
+    }
+    // Interpolate position with arc
+    const lat=m.originLat+(m.targetLat-m.originLat)*m.progress;
+    const lon=m.originLon+(m.targetLon-m.originLon)*m.progress;
+    m.marker.setLatLng([lat,lon]);
+    m.pts.push([lat,lon]);
+    m.trail.setLatLngs([[m.originLat,m.originLon],...m.pts]);
+    m.trailGlow.setLatLngs([[m.originLat,m.originLon],...m.pts]);
+    // fuzeyi takip et
+    ST.map.panTo([lat,lon],{animate:true,duration:0.3,noMoveStart:true});
+    // ekranda konum goster
+    const tracker=document.getElementById('missileTracker');
+    const pct=Math.round(m.progress*100);
+    const dist=Math.round(Math.sqrt(Math.pow((m.targetLat-m.originLat)*111,2)+Math.pow((m.targetLon-m.originLon)*85,2)));
+    const remaining=Math.round(dist*(1-m.progress));
+    tracker.innerHTML=`🚀 ${m.id} | ${m.type} | ${lat.toFixed(4)}°N ${lon.toFixed(4)}°E | İLERLEME: ${pct}% | HEDEFE: ${remaining}km`;
+    tracker.classList.add('active');
+  });
+  // fuze yoksa tracker kapat
+  if(!ST.missiles.some(m=>m.alive)){
+    const tracker=document.getElementById('missileTracker');
+    if(tracker)tracker.classList.remove('active');
+  }
+  ST.missiles=ST.missiles.filter(m=>m.alive||m.progress<1.5);
+}
+
+function createExplosion(lat,lon){
+  // Multiple expanding circles
+  for(let i=0;i<4;i++){
+    setTimeout(()=>{
+      const c=L.circle([lat,lon],{
+        radius:10000+i*20000,color:i<2?'#ff4500':'#ff0040',weight:2,
+        fillColor:'#ff4500',fillOpacity:0.15-i*0.03,opacity:0.8
+      }).addTo(ST.map);
+      // Animate expansion
+      let r=10000+i*20000;
+      const expand=setInterval(()=>{
+        r+=5000;c.setRadius(r);c.setStyle({opacity:Math.max(0,0.8-r/200000),fillOpacity:Math.max(0,0.15-r/500000)});
+        if(r>200000){clearInterval(expand);ST.map.removeLayer(c);}
+      },50);
+    },i*200);
+  }
+}
+
+// ─── ALARM SYSTEM ───────────────────────────────────────────────
+function triggerAlarm(text){
+  const overlay=document.getElementById('alarmOverlay');
+  const banner=document.getElementById('missileBanner');
+  document.getElementById('alarmText').textContent=text;
+  document.getElementById('bannerText').textContent=text+' — '+text;
+  overlay.classList.add('active');
+  banner.classList.add('active');
+  // Status change
+  document.getElementById('satStatus').textContent='ALARM';
+  document.getElementById('satStatus').className='tb-stat-val critical';
+
+  setTimeout(()=>{
+    overlay.classList.remove('active');
+    banner.classList.remove('active');
+    document.getElementById('satStatus').textContent='OPR';
+    document.getElementById('satStatus').className='tb-stat-val green';
+  },6000);
+}
+
+// ─── TARGET LIST ────────────────────────────────────────────────
+function updateTargetList(){
+  const all=[
+    ...ST.targets.map(t=>({...t,category:'static'})),
+    ...ST.aircrafts.filter(a=>a.alive).map(a=>({...a,category:'aircraft'})),
+    ...ST.drones.filter(d=>d.alive).map(d=>({...d,category:'drone'})),
+    ...ST.missiles.filter(m=>m.alive).map(m=>({id:m.id,type:m.type,threat:'CRITICAL',color:'#ff0040',lat:m.originLat,lon:m.originLon,category:'missile'})),
+  ];
+  const el=document.getElementById('tgtList');
+  el.innerHTML=all.map(t=>{
+    const badge=t.threat==='CRITICAL'?'t-crit':t.threat==='HIGH'?'t-high':t.threat==='MED'?'t-med':'t-low';
+    const cls=t.threat==='CRITICAL'?'tgt-item critical':'tgt-item';
+    const emoji=t.category==='missile'?'🚀':t.category==='aircraft'?'✈️':t.category==='drone'?'◆':t.icon||'▲';
+    return`<div class="${cls}" onclick="ST.map.flyTo([${t.lat},${t.lon}],8)">
+      <div class="tgt-dot" style="background:${t.color}"></div>
+      <div class="tgt-info"><div class="tgt-id">${emoji} ${t.id} — ${t.type}</div><div class="tgt-pos">${t.lat.toFixed(1)}°N ${t.lon.toFixed(1)}°E</div></div>
+      <span class="tgt-badge ${badge}">${t.threat}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('tgtBadge').textContent=all.length+' HEDEF';
+  // Update counters
+  document.getElementById('tcMissile').textContent=ST.missiles.filter(m=>m.alive).length;
+  document.getElementById('tcAircraft').textContent=ST.aircrafts.filter(a=>a.alive).length;
+  document.getElementById('tcDrone').textContent=ST.drones.filter(d=>d.alive).length;
+  document.getElementById('tcReal').textContent=ST.realAircraft.length;
+  const critCount=all.filter(t=>t.threat==='CRITICAL').length;
+  document.getElementById('threatVal').textContent=critCount>0?critCount+' KRİTİK':all.length+' AKTİF';
+  document.getElementById('threatVal').className=critCount>0?'tb-stat-val critical':'tb-stat-val warn';
+}
+
+// ─── TELEMETRY ──────────────────────────────────────────────────
+const TELEM=[
+  {label:'GÜNEŞ PANELİ',key:'eps',unit:'W',min:10,max:16,color:'#00ff9d',val:13.2},
+  {label:'BATARYA',key:'bat',unit:'%',min:70,max:90,color:'#00ff9d',val:82},
+  {label:'OBC SICAKLIK',key:'obc',unit:'°C',min:20,max:32,color:'#00f0ff',val:25.5},
+  {label:'SDR GÜÇ',key:'sdr',unit:'W',min:2,max:4,color:'#00f0ff',val:3.1},
+  {label:'ADCS TORK',key:'adcs',unit:'Am²',min:.18,max:.26,color:'#ffc107',val:0.22},
+  {label:'LINK GÜCÜ',key:'link',unit:'dBm',min:-90,max:-75,color:'#ffc107',val:-82},
+];
+function initTelemetry(){
+  document.getElementById('telemGrid').innerHTML=TELEM.map(t=>`
+    <div class="t-row"><span class="t-label">${t.label}</span><span class="t-val" style="color:${t.color}" id="tv_${t.key}">—</span></div>
+    <div class="t-bar"><div class="t-fill" id="tb_${t.key}" style="background:${t.color}"></div></div>`).join('');
+  updateTelemetry();
+}
+function updateTelemetry(){
+  TELEM.forEach(t=>{
+    // Smooth random walk — küçük adımlarla yürü, sınırları aşma
+    const range=t.max-t.min;
+    const step=range*0.02; // maks %2 değişim
+    t.val+=(Math.random()-0.5)*step;
+    // Sınırları yumuşak tut (mereze doğru çek)
+    const mid=(t.min+t.max)/2;
+    t.val+=(mid-t.val)*0.005;
+    // Hard clamp
+    t.val=Math.max(t.min,Math.min(t.max,t.val));
+    const pct=((t.val-t.min)/range*100).toFixed(0);
+    const d=t.unit==='%'?t.val.toFixed(0)+t.unit:t.unit==='dBm'?t.val.toFixed(1)+t.unit:t.val.toFixed(2)+' '+t.unit;
+    const el=document.getElementById('tv_'+t.key),bar=document.getElementById('tb_'+t.key);
+    if(el)el.textContent=d;if(bar)bar.style.width=pct+'%';
+  });
+}
+
+// ─── AI ─────────────────────────────────────────────────────────
+const AI_ITEMS=[
+  {label:'GÜVEN',id:'ai_conf',color:'#00ff9d',min:88,max:97,val:94.2},
+  {label:'VPU YÜK',id:'ai_vpu',color:'#ffc107',min:65,max:85,val:72},
+  {label:'HEDEF SAYISI',id:'ai_tgt',color:'#00f0ff',min:3,max:12,val:5},
+  {label:'FPS',id:'ai_fps',color:'#00ff9d',min:20,max:26,val:23.4},
+  {label:'FÜZE ALGILAMA',id:'ai_msl',color:'#ff0040',min:90,max:99,val:95.8},
+];
+function initAI(){
+  document.getElementById('aiWrap').innerHTML=AI_ITEMS.map(a=>`
+    <div class="ai-row"><div class="ai-label-row"><span class="ai-label">${a.label}</span><span class="ai-val" id="${a.id}" style="color:${a.color}">—</span></div>
+    <div class="ai-bar"><div class="ai-fill" id="${a.id}_b" style="background:${a.color}"></div></div></div>`).join('');
+  updateAI();
+}
+function updateAI(){
+  AI_ITEMS.forEach(a=>{
+    const range=a.max-a.min;
+    const step=range*0.015;
+    a.val+=(Math.random()-0.5)*step;
+    a.val+=((a.min+a.max)/2-a.val)*0.003;
+    a.val=Math.max(a.min,Math.min(a.max,a.val));
+    const pct=((a.val-a.min)/range*100).toFixed(0);
+    const el=document.getElementById(a.id),bar=document.getElementById(a.id+'_b');
+    if(el)el.textContent=a.label==='FPS'?a.val.toFixed(1):a.label==='HEDEF SAYISI'?Math.round(a.val):a.val.toFixed(1)+'%';
+    if(bar)bar.style.width=pct+'%';
+  });
+}
+
+// ─── RADAR ──────────────────────────────────────────────────────
+function drawRadar(){
+  const cvs=document.getElementById('radarCvs'),ctx=cvs.getContext('2d');
+  const cx=110,cy=110,r=100;
+  ctx.fillStyle='#030609';ctx.fillRect(0,0,220,220);
+  // Rings
+  [20,40,60,80,100].forEach(ri=>{ctx.beginPath();ctx.arc(cx,cy,ri,0,Math.PI*2);ctx.strokeStyle='rgba(0,240,255,0.08)';ctx.lineWidth=0.5;ctx.stroke();});
+  // Cross
+  ctx.strokeStyle='rgba(0,240,255,0.06)';ctx.lineWidth=0.5;
+  [0,45,90,135].forEach(a=>{const ar=a*Math.PI/180;ctx.beginPath();ctx.moveTo(cx-Math.cos(ar)*r,cy-Math.sin(ar)*r);ctx.lineTo(cx+Math.cos(ar)*r,cy+Math.sin(ar)*r);ctx.stroke();});
+  // Sweep
+  ST.radarAngle=(ST.radarAngle+0.04)%(Math.PI*2);
+  ctx.save();ctx.translate(cx,cy);
+  ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,r,ST.radarAngle-0.8,ST.radarAngle);ctx.closePath();
+  const g=ctx.createRadialGradient(0,0,0,0,0,r);
+  g.addColorStop(0,'rgba(0,240,255,.6)');g.addColorStop(1,'rgba(0,240,255,0)');
+  ctx.fillStyle=g;ctx.fill();
+  ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(ST.radarAngle)*r,Math.sin(ST.radarAngle)*r);
+  ctx.strokeStyle='rgba(0,240,255,.9)';ctx.lineWidth=2;ctx.stroke();
+  ctx.restore();
+
+  // Blips — more of them, different types
+  const allTgts=[...ST.targets,...ST.aircrafts,...ST.drones];
+  allTgts.forEach((t,i)=>{
+    const a=(i*1.3+0.5)%(Math.PI*2);
+    const d=0.3+((i*17)%60)/100;
+    const age=(ST.radarAngle-a+Math.PI*2)%(Math.PI*2);
+    if(age<1.2){
+      const op=1-age/1.2;
+      const bx=cx+Math.cos(a)*d*r,by=cy+Math.sin(a)*d*r;
+      const clr=t.threat==='CRITICAL'?`rgba(255,0,40,${op})`:t.color.replace(')',`,${op})`).replace('rgb','rgba');
+      ctx.beginPath();ctx.arc(bx,by,t.threat==='CRITICAL'?5:3.5,0,Math.PI*2);
+      ctx.fillStyle=clr;ctx.fill();
+      // Pulse ring for critical
+      if(t.threat==='CRITICAL'){
+        ctx.beginPath();ctx.arc(bx,by,8+Math.sin(ST.tick*.15)*3,0,Math.PI*2);
+        ctx.strokeStyle=`rgba(255,0,40,${op*0.5})`;ctx.lineWidth=1;ctx.stroke();
+      }
+    }
+  });
+  // Missile blips — bright pulsing
+  ST.missiles.filter(m=>m.alive).forEach((m,i)=>{
+    const a=(i*2.1+1.5)%(Math.PI*2);
+    const d=0.2+m.progress*0.6;
+    const bx=cx+Math.cos(a)*d*r,by=cy+Math.sin(a)*d*r;
+    ctx.beginPath();ctx.arc(bx,by,4+Math.sin(ST.tick*.2)*2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,0,40,${0.6+Math.sin(ST.tick*.2)*0.4})`;ctx.fill();
+    ctx.beginPath();ctx.arc(bx,by,10+Math.sin(ST.tick*.15)*4,0,Math.PI*2);
+    ctx.strokeStyle='rgba(255,0,40,0.3)';ctx.lineWidth=1;ctx.stroke();
+  });
+
+  ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);ctx.fillStyle='#00ff9d';ctx.fill();
+  ctx.fillStyle='rgba(0,240,255,.5)';ctx.font='8px Share Tech Mono';
+  ctx.fillText('N',cx-3,cy-r+10);ctx.fillText('E',cx+r-10,cy+4);
+  ctx.fillText('S',cx-3,cy+r-4);ctx.fillText('W',cx-r+2,cy+4);
+}
+
+// ─── 3D GLOBE ───────────────────────────────────────────────────
+function initGlobe3D(){
+  const canvas=document.getElementById('globe3d');
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(45,1,0.1,100);
+  camera.position.z=2.8;
+  const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true});
+  renderer.setSize(220,220);
+  renderer.setClearColor(0x000000,0);
+
+  // Wireframe globe
+  const geo=new THREE.SphereGeometry(1,24,16);
+  const wireGeo=new THREE.WireframeGeometry(geo);
+  const wireMat=new THREE.LineBasicMaterial({color:0x00f0ff,opacity:0.15,transparent:true});
+  const globe=new THREE.LineSegments(wireGeo,wireMat);
+  scene.add(globe);
+
+  // Solid dark sphere inside
+  const solidGeo=new THREE.SphereGeometry(0.98,32,32);
+  const solidMat=new THREE.MeshBasicMaterial({color:0x040810});
+  scene.add(new THREE.Mesh(solidGeo,solidMat));
+
+  // Atmosphere glow
+  const atmoGeo=new THREE.SphereGeometry(1.08,32,32);
+  const atmoMat=new THREE.MeshBasicMaterial({color:0x0060ff,opacity:0.08,transparent:true,side:THREE.BackSide});
+  scene.add(new THREE.Mesh(atmoGeo,atmoMat));
+
+  // Equator and key latitudes
+  [0,23.5,-23.5,45,-45].forEach(lat=>{
+    const pts=[];
+    const phi=(90-lat)*Math.PI/180;
+    for(let i=0;i<=64;i++){
+      const theta=(i/64)*Math.PI*2;
+      pts.push(new THREE.Vector3(
+        -1.01*Math.sin(phi)*Math.cos(theta),
+        1.01*Math.cos(phi),
+        1.01*Math.sin(phi)*Math.sin(theta)
+      ));
+    }
+    const lineGeo=new THREE.BufferGeometry().setFromPoints(pts);
+    const lineMat=new THREE.LineBasicMaterial({color:lat===0?0x00ff9d:0x00f0ff,opacity:lat===0?0.3:0.1,transparent:true});
+    scene.add(new THREE.Line(lineGeo,lineMat));
+  });
+
+  // Satellite orbit ring
+  const orbitPts=[];
+  for(let i=0;i<=128;i++){
+    const theta=(i/128)*Math.PI*2;
+    const r=1.15;
+    orbitPts.push(new THREE.Vector3(r*Math.cos(theta),r*Math.sin(theta)*Math.cos(97.4*Math.PI/180),r*Math.sin(theta)*Math.sin(97.4*Math.PI/180)));
+  }
+  const orbitGeo=new THREE.BufferGeometry().setFromPoints(orbitPts);
+  const orbitMat=new THREE.LineBasicMaterial({color:0x00ff9d,opacity:0.4,transparent:true});
+  scene.add(new THREE.Line(orbitGeo,orbitMat));
+
+  // Satellite dot
+  const satDotGeo=new THREE.SphereGeometry(0.03,8,8);
+  const satDotMat=new THREE.MeshBasicMaterial({color:0x00ff9d});
+  const satDot=new THREE.Mesh(satDotGeo,satDotMat);
+  scene.add(satDot);
+
+  // Target dots
+  const tgtDots=[];
+  const addTgtDot=(lat,lon,color)=>{
+    const pos=latLonToVec3(lat,lon,1.02);
+    const dGeo=new THREE.SphereGeometry(0.02,6,6);
+    const dMat=new THREE.MeshBasicMaterial({color});
+    const dot=new THREE.Mesh(dGeo,dMat);
+    dot.position.copy(pos);
+    scene.add(dot);
+    tgtDots.push(dot);
+  };
+  TGTS_INIT.forEach(t=>addTgtDot(t.lat,t.lon,new THREE.Color(t.color)));
+
+  ST.globe={scene,camera,renderer,globe,satDot,tgtDots};
+}
+
+function latLonToVec3(lat,lon,r){
+  const phi=(90-lat)*Math.PI/180;
+  const theta=(lon+180)*Math.PI/180;
+  return new THREE.Vector3(-r*Math.sin(phi)*Math.cos(theta),r*Math.cos(phi),r*Math.sin(phi)*Math.sin(theta));
+}
+
+function renderGlobe(){
+  if(!ST.globe||ST.viewMode!=='globe')return;
+  const g=ST.globe;
+  g.globe.rotation.y+=0.003;
+  // Update satellite position on globe
+  const satPos=latLonToVec3(ST.satLat,ST.satLon,1.15);
+  g.satDot.position.copy(satPos);
+  g.renderer.render(g.scene,g.camera);
+}
+
+function setView(mode){
+  ST.viewMode=mode;
+  document.getElementById('radarWrap').style.display=mode==='radar'?'flex':'none';
+  document.getElementById('globeWrap').style.display=mode==='globe'?'flex':'none';
+  document.getElementById('vtRadar').classList.toggle('active',mode==='radar');
+  document.getElementById('vtGlobe').classList.toggle('active',mode==='globe');
+}
+
+// ─── WATERFALL / DOPPLER / DATA ─────────────────────────────────
+function resizeBottomCanvases(){
+  initCubeSatSize();
+}
+function drawWaterfall(){
+  const cvs=document.getElementById('watCvs'),ctx=cvs.getContext('2d');
+  const w=cvs.width,h=cvs.height;if(!w||!h)return;
+  const img=ctx.getImageData(0,0,w,h);ctx.putImageData(img,0,1);
+  const row=ctx.createImageData(w,1);
+  const hasMissile=ST.missiles.some(m=>m.alive);
+  for(let x=0;x<w;x++){
+    const f=x/w;let v=0.05+Math.random()*0.08;
+    if(ST.mode===0){if(Math.abs(f-.28)<.025)v=.5+Math.random()*.4;if(Math.abs(f-.71)<.012)v=.3+Math.random()*.3;}
+    else if(ST.mode===1){if(Math.abs(f-.5)<.035)v=.7+Math.random()*.3;if(Math.abs(f-.2)<.01)v=.4+Math.random()*.2;}
+    else{if(Math.abs(f-.45)<.02)v=.9+Math.random()*.1;}
+    // Missile RF signature
+    if(hasMissile&&Math.abs(f-.85)<.02)v=.8+Math.random()*.2;
+    if(hasMissile&&Math.abs(f-.15)<.015)v=.6+Math.random()*.3;
+    const i=x*4;
+    if(hasMissile&&v>.5){row.data[i]=Math.floor(v*200);row.data[i+1]=Math.floor(v*50);row.data[i+2]=0;}
+    else if(v>.5){row.data[i]=0;row.data[i+1]=Math.floor(v*200);row.data[i+2]=Math.floor(v*80);}
+    else if(v>.2){row.data[i]=0;row.data[i+1]=Math.floor(v*140);row.data[i+2]=Math.floor(v*255);}
+    else{row.data[i]=0;row.data[i+1]=Math.floor(v*60);row.data[i+2]=Math.floor(v*160);}
+    row.data[i+3]=255;
+  }
+  ctx.putImageData(row,0,0);
+}
+function drawDopp(){
+  const cvs=document.getElementById('doppCvs'),ctx=cvs.getContext('2d');
+  const w=cvs.width,h=cvs.height;if(!w||!h)return;
+  const img=ctx.getImageData(0,0,w,h);ctx.putImageData(img,0,1);
+  const row=ctx.createImageData(w,1);
+  const hasMissile=ST.missiles.some(m=>m.alive);
+  for(let x=0;x<w;x++){
+    const f=(x/w-.5)*2;let v=0.04+Math.random()*0.06;
+    const sig=Math.exp(-f*f*8);v+=sig*(.3+Math.sin(ST.tick*.05+f*3)*.15);
+    if(Math.abs(f-.6)<.03)v+=.4+Math.random()*.2;
+    // Massive Doppler shift for missile
+    if(hasMissile){if(Math.abs(f-.8)<.04)v+=.6+Math.random()*.3;if(Math.abs(f+.7)<.03)v+=.4+Math.random()*.2;}
+    const i=x*4;
+    if(hasMissile&&v>.6){row.data[i]=Math.floor(v*255);row.data[i+1]=Math.floor(v*80);row.data[i+2]=0;}
+    else{row.data[i]=Math.floor(v*100);row.data[i+1]=Math.floor(v*200);row.data[i+2]=Math.floor(v*255);}
+    row.data[i+3]=255;
+  }
+  ctx.putImageData(row,0,0);
+}
+// ─── CUBESAT 3D MODEL (GELİŞMİŞ) ───────────────────────────────
+const CSAT={scene:null,camera:null,renderer:null,group:null,
+  panels:[],antennas:[],leds:[],
+  panelAngle:0,panelAngleTarget:0,
+  panelSpin:0,panelSpinSpeed:0,
+  antennasDeployed:false,antennaProgress:0,antennaTarget:0,
+  autoRotate:true,yawVel:0,pitchVel:0,rollVel:0,
+  mode:'IDLE',
+  battery:85,batteryWarned:false,
+  launchT:0};
+
+function createSolarTexture(){
+  const c=document.createElement('canvas');c.width=512;c.height=1024;
+  const x=c.getContext('2d');
+  // Anti-reflective coating — koyu lacivert-mor baz
+  const g=x.createLinearGradient(0,0,0,1024);
+  g.addColorStop(0,'#060e28');g.addColorStop(0.3,'#0a1838');g.addColorStop(0.5,'#0c1e45');
+  g.addColorStop(0.7,'#0a1838');g.addColorStop(1,'#060e28');
+  x.fillStyle=g;x.fillRect(0,0,512,1024);
+  // Her hücre ayrı ayrı — gerçekçi monokristal silikon
+  const cellW=30,cellH=24;
+  for(let cy=1;cy<1024;cy+=cellH){
+    for(let cx=1;cx<512;cx+=cellW){
+      // Hücre bazı — hafif renk varyasyonu
+      const hue=Math.random()*10;
+      const sat=60+Math.random()*20;
+      x.fillStyle=`hsl(${225+hue},${sat}%,${12+Math.random()*5}%)`;
+      x.fillRect(cx+1,cy+1,cellW-2,cellH-2);
+      // Hücre içi çapraz çizgi (kristal yapı)
+      x.strokeStyle=`rgba(40,60,120,${0.15+Math.random()*0.1})`;
+      x.lineWidth=0.3;
+      x.beginPath();x.moveTo(cx+1,cy+1);x.lineTo(cx+cellW-2,cy+cellH-2);x.stroke();
+      // Üst kenar yansıma
+      x.fillStyle=`rgba(80,130,255,${0.03+Math.random()*0.03})`;
+      x.fillRect(cx+1,cy+1,cellW-2,3);
+    }
+  }
+  // Gümüş grid çizgileri (fingers)
+  x.strokeStyle='rgba(180,185,195,0.5)';x.lineWidth=0.8;
+  for(let y=0;y<=1024;y+=cellH){x.beginPath();x.moveTo(0,y);x.lineTo(512,y);x.stroke();}
+  for(let i=0;i<=512;i+=cellW){x.beginPath();x.moveTo(i,0);x.lineTo(i,1024);x.stroke();}
+  // Ana bus bar (geniş gümüş çizgiler)
+  x.fillStyle='rgba(190,195,210,0.6)';
+  for(let y=cellH*5;y<1024;y+=cellH*5){x.fillRect(0,y-1,512,2.5);}
+  // Bağlantı noktaları
+  x.fillStyle='rgba(200,200,210,0.4)';
+  for(let y=0;y<1024;y+=cellH){x.fillRect(0,y,3,cellH);x.fillRect(509,y,3,cellH);}
+  return new THREE.CanvasTexture(c);
+}
+
+function createMLITexture(){
+  const c=document.createElement('canvas');c.width=512;c.height=1024;
+  const x=c.getContext('2d');
+  // Kapton polyimide film bazı — amber/altın
+  const g=x.createLinearGradient(0,0,512,1024);
+  g.addColorStop(0,'#b8922a');g.addColorStop(0.15,'#d4aa30');g.addColorStop(0.3,'#c49828');
+  g.addColorStop(0.5,'#dab535');g.addColorStop(0.7,'#c49828');g.addColorStop(0.85,'#b08820');
+  g.addColorStop(1,'#a07818');
+  x.fillStyle=g;x.fillRect(0,0,512,1024);
+  // Katman varyasyonları (MLI çok katmanlı — her katman farklı reflektivite)
+  for(let i=0;i<30;i++){
+    const ry=Math.random()*1024,rh=20+Math.random()*40;
+    x.fillStyle=`rgba(${200+Math.random()*55},${160+Math.random()*50},${20+Math.random()*40},${0.05+Math.random()*0.08})`;
+    x.fillRect(0,ry,512,rh);
+  }
+  // Kırışıklar — rastgele eğri çizgiler (gerçek MLI buruşuk görünür)
+  for(let i=0;i<150;i++){
+    const bright=Math.random()>0.5;
+    x.strokeStyle=bright?`rgba(230,210,80,${0.08+Math.random()*0.1})`:`rgba(120,90,15,${0.06+Math.random()*0.08})`;
+    x.lineWidth=0.3+Math.random()*0.8;
+    x.beginPath();
+    const sx=Math.random()*512,sy=Math.random()*1024;
+    x.moveTo(sx,sy);
+    for(let j=0;j<3;j++) x.lineTo(sx+(Math.random()-0.5)*40,sy+(Math.random()-0.5)*30);
+    x.stroke();
+  }
+  // Kapton bant şeritleri (düzenli yatay çizgiler)
+  x.strokeStyle='rgba(180,140,20,0.2)';x.lineWidth=2;
+  for(let y=80;y<1024;y+=90+Math.random()*20){
+    x.beginPath();x.moveTo(0,y);x.lineTo(512,y);x.stroke();
+    // Bant kenarı parlama
+    x.strokeStyle='rgba(240,220,100,0.06)';x.lineWidth=1;
+    x.beginPath();x.moveTo(0,y+2);x.lineTo(512,y+2);x.stroke();
+    x.strokeStyle='rgba(180,140,20,0.2)';x.lineWidth=2;
+  }
+  // Dikey dikişler
+  x.strokeStyle='rgba(160,120,15,0.15)';x.lineWidth=1.5;
+  for(let vx=120;vx<512;vx+=140+Math.random()*30){
+    x.beginPath();x.moveTo(vx,0);x.lineTo(vx,1024);x.stroke();
+  }
+  // Mikro parlama noktaları (yansıma simülasyonu)
+  for(let i=0;i<200;i++){
+    const px=Math.random()*512,py=Math.random()*1024;
+    const pr=0.5+Math.random()*1.5;
+    x.fillStyle=`rgba(255,240,150,${0.05+Math.random()*0.1})`;
+    x.beginPath();x.arc(px,py,pr,0,Math.PI*2);x.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+function createBodySideTexture(text){
+  const c=document.createElement('canvas');c.width=512;c.height=128;
+  const x=c.getContext('2d');
+  x.fillStyle='#0a0a0a';x.fillRect(0,0,512,128);
+  // Label
+  x.font='bold 36px Orbitron, monospace';x.fillStyle='#00f0ff';x.textAlign='center';
+  x.fillText(text,256,55);
+  x.font='14px Share Tech Mono, monospace';x.fillStyle='#4a6a8a';
+  x.fillText('3U CUBESAT — TUA 2026',256,80);
+  // Top/bottom accent lines
+  x.fillStyle='rgba(0,240,255,0.3)';
+  x.fillRect(20,10,472,1);x.fillRect(20,117,472,1);
+  // Corner brackets
+  x.strokeStyle='rgba(0,240,255,0.5)';x.lineWidth=2;
+  [[15,8,15,25],[15,8,35,8]].forEach(([x1,y1,x2,y2])=>{x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.stroke();});
+  [[497,8,497,25],[497,8,477,8]].forEach(([x1,y1,x2,y2])=>{x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.stroke();});
+  return new THREE.CanvasTexture(c);
+}
+
+function initCubeSat(){
+  const canvas=document.getElementById('csatCvs');
+  if(!canvas)return;
+  const p=canvas.parentElement;
+  const w=p.clientWidth,h=p.clientHeight-52;
+  canvas.width=w;canvas.height=Math.max(h,120);
+
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(45,w/Math.max(h,120),0.1,100);
+  camera.position.set(6,4,6);
+  camera.lookAt(0,0,0);
+
+  const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true});
+  renderer.setSize(w,Math.max(h,120));
+  renderer.setClearColor(0x030609,1);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+
+  // ═══ PBR ENVIRONMENT MAP — uzay yansıma haritası ═══
+  const envC=document.createElement('canvas');envC.width=1024;envC.height=512;
+  const eCtx=envC.getContext('2d');
+  // Koyu uzay arka planı
+  eCtx.fillStyle='#020205';eCtx.fillRect(0,0,1024,512);
+  // Yıldızlar (yansımalarda görünecek)
+  for(let i=0;i<500;i++){
+    const b=0.3+Math.random()*0.7;
+    eCtx.fillStyle=`rgba(${200+Math.random()*55},${200+Math.random()*55},${220+Math.random()*35},${b*0.6})`;
+    const sz=Math.random()>0.95?2:1;
+    eCtx.fillRect(Math.random()*1024,Math.random()*512,sz,sz);
+  }
+  // Dünya glow (alttan mavi yansıma)
+  const egGrad=eCtx.createRadialGradient(512,480,30,512,480,250);
+  egGrad.addColorStop(0,'rgba(60,120,220,0.15)');egGrad.addColorStop(0.5,'rgba(30,60,150,0.05)');
+  egGrad.addColorStop(1,'rgba(0,0,0,0)');
+  eCtx.fillStyle=egGrad;eCtx.fillRect(0,0,1024,512);
+  // Güneş glow (sağ üst)
+  const sgGrad=eCtx.createRadialGradient(800,100,10,800,100,150);
+  sgGrad.addColorStop(0,'rgba(255,240,200,0.3)');sgGrad.addColorStop(0.3,'rgba(255,200,100,0.1)');
+  sgGrad.addColorStop(1,'rgba(0,0,0,0)');
+  eCtx.fillStyle=sgGrad;eCtx.fillRect(0,0,1024,512);
+
+  const envTexture=new THREE.CanvasTexture(envC);
+  envTexture.mapping=THREE.EquirectangularReflectionMapping;
+
+  // PMREM ile PBR uyumlu environment map oluştur
+  const pmrem=new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  const envMap=pmrem.fromEquirectangular(envTexture).texture;
+  scene.environment=envMap;
+
+  // Uzay ışıklandırması
+  scene.add(new THREE.AmbientLight(0x222233,0.25));
+  const sunDir=new THREE.DirectionalLight(0xfff5e0,1.6);
+  sunDir.position.set(5,4,3);scene.add(sunDir);
+  const earthReflect=new THREE.DirectionalLight(0x3366aa,0.15);
+  earthReflect.position.set(0,-1,0);scene.add(earthReflect);
+  const fillLight=new THREE.DirectionalLight(0x334455,0.1);
+  fillLight.position.set(-3,1,-2);scene.add(fillLight);
+
+  // Tone mapping — HDR benzeri görünüm
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.2;
+  renderer.outputEncoding=THREE.sRGBEncoding;
+
+  const group=new THREE.Group();
+
+  // ═══ BODY — 3U dikey: 10×10×30cm ═══
+  const bodyW=0.5,bodyD=0.5,bodyH=1.5;
+  const mliTex=createMLITexture();
+  mliTex.wrapS=THREE.RepeatWrapping;mliTex.wrapT=THREE.RepeatWrapping;
+
+  // PBR malzemeler — MeshStandardMaterial (metalness + roughness)
+  const mliMat=new THREE.MeshStandardMaterial({map:mliTex,color:0xdab535,metalness:0.75,roughness:0.28,envMap,envMapIntensity:0.6});
+  const darkMat=new THREE.MeshStandardMaterial({color:0x0a0a12,metalness:0.1,roughness:0.7,envMap,envMapIntensity:0.2});
+  const metalMat=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.92,roughness:0.15,envMap,envMapIntensity:0.8});
+  const pcbGreen=new THREE.MeshStandardMaterial({color:0x145524,metalness:0.05,roughness:0.6});
+  const pcbDark=new THREE.MeshStandardMaterial({color:0x0a2a14,metalness:0.05,roughness:0.7});
+
+  // 3 ayrı ünite kutusu (1U + 1U + 1U)
+  const unitH=bodyH/3;
+  for(let u=0;u<3;u++){
+    const unitGeo=new THREE.BoxGeometry(bodyW-0.01,unitH-0.01,bodyD-0.01);
+    const unitY=-bodyH/2+unitH/2+u*unitH;
+    // Alt ünite koyu (EPS+COM), orta MLI (OBC+ADCS), üst koyu (Payload)
+    const mat=u===1?mliMat:(u===0?darkMat:new THREE.MeshStandardMaterial({color:0x1a1a22,metalness:0.15,roughness:0.65}));
+    const unit=new THREE.Mesh(unitGeo,mat);
+    unit.position.set(0,unitY,0);
+    group.add(unit);
+
+    // Ünite kenar wireframe
+    group.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(unitGeo),
+      new THREE.LineBasicMaterial({color:0x00f0ff,opacity:0.2,transparent:true})
+    )).position.set(0,unitY,0);
+
+    // Üniteler arası ayırıcı çizgi (PCB kartı kenarı)
+    if(u<2){
+      const sepGeo=new THREE.BoxGeometry(bodyW+0.005,0.008,bodyD+0.005);
+      const sep=new THREE.Mesh(sepGeo,pcbGreen);
+      sep.position.set(0,unitY+unitH/2,0);
+      group.add(sep);
+    }
+  }
+
+  // Ana gövde edge wireframe (dış)
+  const bodyGeo=new THREE.BoxGeometry(bodyW,bodyH,bodyD);
+  group.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(bodyGeo),
+    new THREE.LineBasicMaterial({color:0x00f0ff,opacity:0.4,transparent:true})
+  ));
+
+  // ═══ RAILS — 4 köşe rayı (anodize alüminyum) ═══
+  const railGeo=new THREE.BoxGeometry(0.025,bodyH+0.08,0.025);
+  [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([sx,sz])=>{
+    const rail=new THREE.Mesh(railGeo,metalMat);
+    rail.position.set(sx*(bodyW/2),0,sz*(bodyD/2));
+    group.add(rail);
+    // Ray ucu — deployment spring contact
+    const tipGeo=new THREE.BoxGeometry(0.03,0.015,0.03);
+    const tip=new THREE.Mesh(tipGeo,new THREE.MeshBasicMaterial({color:0xdddddd}));
+    tip.position.set(sx*(bodyW/2),-bodyH/2-0.04,sz*(bodyD/2));
+    group.add(tip);
+  });
+
+  // ═══ ÖN YÜZ — GÖLGE-1 ETİKETİ + DETAYLAR ═══
+  const sideTex=createBodySideTexture('GÖLGE-1');
+  const labelGeo=new THREE.PlaneGeometry(bodyW-0.06,unitH-0.04);
+  const labelMat=new THREE.MeshBasicMaterial({map:sideTex,transparent:true});
+  const label=new THREE.Mesh(labelGeo,labelMat);
+  label.position.set(0,0,bodyD/2+0.001);
+  group.add(label);
+
+  // ═══ KAMERA / OPTİK PAYLOAD (üst yüz +Y) ═══
+  // Ana kamera housing
+  const camHousing=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09,0.11,0.07,24),
+    new THREE.MeshStandardMaterial({color:0x111111,metalness:0.6,roughness:0.3,envMap,envMapIntensity:0.5})
+  );
+  camHousing.position.set(0.05,bodyH/2+0.035,0.05);group.add(camHousing);
+  // İç lens barrel (derinlik hissi)
+  const lensBarrel=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.075,0.08,0.03,20),
+    new THREE.MeshStandardMaterial({color:0x050505,metalness:0.5,roughness:0.4,envMap,envMapIntensity:0.3})
+  );
+  lensBarrel.position.set(0.05,bodyH/2+0.06,0.05);group.add(lensBarrel);
+  // Lens (koyu cam — parlak yansımalı)
+  const lensGlass=new THREE.Mesh(
+    new THREE.CircleGeometry(0.065,20),
+    new THREE.MeshStandardMaterial({color:0x060618,metalness:0.3,roughness:0.05,envMap,envMapIntensity:1.0,opacity:0.9,transparent:true})
+  );
+  lensGlass.rotation.x=-Math.PI/2;lensGlass.position.set(0.05,bodyH/2+0.071,0.05);group.add(lensGlass);
+  // Lens glow ring
+  const lensRing=new THREE.Mesh(
+    new THREE.TorusGeometry(0.075,0.008,8,24),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,opacity:0.5,transparent:true})
+  );
+  lensRing.rotation.x=-Math.PI/2;lensRing.position.set(0.05,bodyH/2+0.073,0.05);group.add(lensRing);
+  CSAT.lensRing=lensRing;
+
+  // IR sensör (termal kamera — küçük kare, kamera yanında)
+  const irHousing=new THREE.Mesh(
+    new THREE.BoxGeometry(0.06,0.04,0.06),
+    new THREE.MeshStandardMaterial({color:0x181818,metalness:0.5,roughness:0.35,envMap,envMapIntensity:0.4})
+  );
+  irHousing.position.set(-0.1,bodyH/2+0.02,0.05);group.add(irHousing);
+  const irLens=new THREE.Mesh(
+    new THREE.CircleGeometry(0.02,8),
+    new THREE.MeshBasicMaterial({color:0x330000})
+  );
+  irLens.rotation.x=-Math.PI/2;irLens.position.set(-0.1,bodyH/2+0.041,0.05);group.add(irLens);
+  // IR glow
+  const irGlow=new THREE.Mesh(
+    new THREE.TorusGeometry(0.022,0.004,6,12),
+    new THREE.MeshBasicMaterial({color:0xff4444,opacity:0.4,transparent:true})
+  );
+  irGlow.rotation.x=-Math.PI/2;irGlow.position.set(-0.1,bodyH/2+0.042,0.05);group.add(irGlow);
+  CSAT.irGlow=irGlow;
+
+  // Star Tracker (yıldız sensörü — üst yüzde küçük silindir)
+  const starTracker=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03,0.035,0.03,8),
+    new THREE.MeshStandardMaterial({color:0x222222,metalness:0.5,roughness:0.35,envMap,envMapIntensity:0.4})
+  );
+  starTracker.position.set(-0.05,bodyH/2+0.015,-0.1);group.add(starTracker);
+  const stLens=new THREE.Mesh(
+    new THREE.CircleGeometry(0.025,8),
+    new THREE.MeshStandardMaterial({color:0x080820,metalness:0.2,roughness:0.1,envMap,envMapIntensity:0.8})
+  );
+  stLens.rotation.x=-Math.PI/2;stLens.position.set(-0.05,bodyH/2+0.031,-0.1);group.add(stLens);
+
+  // ═══ YAN YÜZ DETAYLARI ═══
+  // SDR anten konnektörü (sağ yüz, SMA tipi)
+  const smaGeo=new THREE.CylinderGeometry(0.012,0.012,0.025,8);
+  const smaMat=new THREE.MeshStandardMaterial({color:0xccaa00,metalness:0.9,roughness:0.15,envMap,envMapIntensity:0.7});
+  const sma1=new THREE.Mesh(smaGeo,smaMat);
+  sma1.rotation.z=Math.PI/2;sma1.position.set(bodyW/2+0.012,0.2,0);group.add(sma1);
+  const sma2=sma1.clone();sma2.position.y=-0.15;group.add(sma2);
+
+  // Debug/programming port (arka yüz, micro-D konnektör)
+  const portGeo=new THREE.BoxGeometry(0.06,0.025,0.01);
+  const portMat=new THREE.MeshStandardMaterial({color:0x888888,metalness:0.8,roughness:0.25,envMap,envMapIntensity:0.5});
+  const port=new THREE.Mesh(portGeo,portMat);
+  port.position.set(0,0.3,-bodyD/2-0.005);group.add(port);
+  // Port iç (koyu)
+  const portIn=new THREE.Mesh(
+    new THREE.BoxGeometry(0.05,0.018,0.005),
+    new THREE.MeshBasicMaterial({color:0x111111})
+  );
+  portIn.position.set(0,0.3,-bodyD/2-0.009);group.add(portIn);
+
+  // Termal radyatör plakası (sol yüz, beyaz)
+  const radGeo=new THREE.PlaneGeometry(unitH*0.6,bodyD*0.5);
+  const radMat=new THREE.MeshStandardMaterial({color:0xeeeeee,metalness:0.1,roughness:0.8,side:THREE.DoubleSide});
+  const radiator=new THREE.Mesh(radGeo,radMat);
+  radiator.rotation.y=Math.PI/2;
+  radiator.position.set(-bodyW/2-0.002,0.1,0);group.add(radiator);
+
+  // ═══ ALT YÜZ — EPS + COM detayları ═══
+  // Separation spring mekaniği (4 adet)
+  const springGeo=new THREE.CylinderGeometry(0.015,0.015,0.03,8);
+  const springMat=new THREE.MeshStandardMaterial({color:0x666666,metalness:0.8,roughness:0.3,envMap,envMapIntensity:0.5});
+  [[-0.12,-0.12],[0.12,-0.12],[0.12,0.12],[-0.12,0.12]].forEach(([sx,sz])=>{
+    const spring=new THREE.Mesh(springGeo,springMat);
+    spring.position.set(sx,-bodyH/2-0.015,sz);group.add(spring);
+  });
+
+  // ═══ GÖVDE ÜZERİ BODY-MOUNTED SOLAR HÜCRELER ═══
+  // Ön ve arka yüzde küçük güneş paneli şeritleri
+  const bodyCellGeo=new THREE.PlaneGeometry(bodyW*0.4,unitH*0.5);
+  const bodyCellMat=new THREE.MeshStandardMaterial({
+    color:0x1a3060,metalness:0.1,roughness:0.3,side:THREE.DoubleSide
+  });
+  // Ön yüz — alt ünite
+  const bc1=new THREE.Mesh(bodyCellGeo,bodyCellMat);
+  bc1.position.set(0.08,-bodyH/2+unitH/2,bodyD/2+0.002);group.add(bc1);
+  // Arka yüz — alt ünite
+  const bc2=new THREE.Mesh(bodyCellGeo,bodyCellMat);
+  bc2.position.set(-0.05,-bodyH/2+unitH/2,-bodyD/2-0.002);group.add(bc2);
+
+  // ═══ KABLO BAĞLARI (harness tie-down) ═══
+  const cableGeo=new THREE.TorusGeometry(0.02,0.004,4,8,Math.PI);
+  const cableMat=new THREE.MeshBasicMaterial({color:0x333333});
+  [0.35,0,-0.35].forEach(y=>{
+    const cable=new THREE.Mesh(cableGeo,cableMat);
+    cable.position.set(bodyW/2+0.003,y,0.1);
+    cable.rotation.y=Math.PI/2;
+    group.add(cable);
+  });
+
+  // ═══ GÜNEŞ PANELLERİ — 4 KÖŞE, ÜSTTEN AŞAĞI AÇILIR ═══
+  // Her panel üst kenardaki menteşeden aşağı sarkar (buzdolabı kapağı)
+  // 90° = gövde yanında dikey, 180° = gövdenin altına doğru uzar
+  const solarTex=createSolarTexture();
+  const panelLen=1.3, panelThk=0.015;
+  const hingeMat=new THREE.MeshStandardMaterial({color:0xaaaaaa,metalness:0.85,roughness:0.2,envMap,envMapIntensity:0.6});
+  const panelMatF=new THREE.MeshStandardMaterial({map:solarTex,color:0x2848aa,metalness:0.15,roughness:0.2,envMap,envMapIntensity:0.3});
+  const panelMatB=new THREE.MeshStandardMaterial({color:0x1a1a1a,metalness:0.1,roughness:0.6});
+  const pEdgeMat=new THREE.LineBasicMaterial({color:0x00f0ff,opacity:0.25,transparent:true});
+
+  // 4 panel tanımı
+  // Açık (angle=0): paneller DIŞARI uzanır (gövdeden uzakta, yatay)
+  // Kapalı (angle=PI/2): paneller gövde KENARINDA aşağı sarkar (dikey, gövdeye yapışık)
+  // Bu sayede paneller HİÇBİR ZAMAN gövde içinden geçmez
+  const panelDefs=[
+    {name:'SAĞ',  px:bodyW/2+panelThk,  pz:0,       ox:panelLen/2,  oz:0,         axis:'z', sign:-1, pw:0.38, sy:panelThk+0.005},
+    {name:'SOL',  px:-bodyW/2-panelThk,  pz:0,       ox:-panelLen/2, oz:0,         axis:'z', sign:1,  pw:0.38, sy:panelThk+0.005},
+    {name:'ÖN',   px:0,        pz:bodyD/2+panelThk,  ox:0,           oz:panelLen/2, axis:'x', sign:1,  pw:0.38, sy:2*panelThk+0.01},
+    {name:'ARKA', px:0,        pz:-bodyD/2-panelThk, ox:0,           oz:-panelLen/2,axis:'x', sign:-1, pw:0.38, sy:2*panelThk+0.01},
+  ];
+
+  panelDefs.forEach(def=>{
+    const pivot=new THREE.Group();
+    pivot.position.set(def.px, bodyH/2, def.pz);
+
+    // Panel spin grubu (kendi ekseni etrafında dönüş için)
+    const spinGroup=new THREE.Group();
+
+    // Panel geometrisi — yatay uzanan yönde uzun
+    const isZ=def.axis==='z';
+    const geo=isZ
+      ? new THREE.BoxGeometry(panelLen,panelThk,def.pw)
+      : new THREE.BoxGeometry(def.pw,panelThk,panelLen);
+
+    // Panel mesh — güneş hücreleri ÜST yüzde (dış yüzey)
+    const panel=new THREE.Mesh(geo,panelMatF);
+    const panelPos=new THREE.Vector3(def.ox, def.sy+panelThk, def.oz);
+    panel.position.copy(panelPos);
+    spinGroup.add(panel);
+
+    // Arka yüz — ALT yüzde (iç yüzey, koyu)
+    const back=new THREE.Mesh(geo,panelMatB);
+    back.position.set(def.ox, def.sy, def.oz);
+    spinGroup.add(back);
+
+    // Edge wireframe
+    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),pEdgeMat.clone());
+    edges.position.copy(panelPos);
+    spinGroup.add(edges);
+
+    // Menteşe silindiri
+    const hingeLen=isZ?def.pw+0.04:def.pw+0.04;
+    const hGeo=new THREE.CylinderGeometry(0.016,0.016,hingeLen,8);
+    const hinge=new THREE.Mesh(hGeo,hingeMat);
+    if(isZ){hinge.rotation.x=Math.PI/2;}
+    // else hinge stays default (along Y)
+    hinge.position.set(0,0,0);
+    spinGroup.add(hinge);
+
+    // Destek strutları
+    const strutMat2=new THREE.MeshStandardMaterial({color:0x777777,metalness:0.8,roughness:0.25,envMap,envMapIntensity:0.5});
+    if(isZ){
+      const sGeo=new THREE.CylinderGeometry(0.008,0.008,Math.abs(def.ox)*1.6,4);
+      const s1=new THREE.Mesh(sGeo,strutMat2);s1.rotation.z=Math.PI/2;
+      s1.position.set(def.ox*0.5,def.sy,def.pw*0.3);spinGroup.add(s1);
+      const s2=s1.clone();s2.position.z=-def.pw*0.3;spinGroup.add(s2);
+    } else {
+      const sGeo=new THREE.CylinderGeometry(0.008,0.008,Math.abs(def.oz)*1.6,4);
+      const s1=new THREE.Mesh(sGeo,strutMat2);s1.rotation.x=Math.PI/2;
+      s1.position.set(def.pw*0.3,def.sy,def.oz*0.5);spinGroup.add(s1);
+      const s2=s1.clone();s2.position.x=-def.pw*0.3;spinGroup.add(s2);
+    }
+
+    pivot.add(spinGroup);
+    group.add(pivot);
+
+    CSAT.panels.push({pivot,spinGroup,axis:def.axis,sign:def.sign,name:def.name});
+  });
+
+  // ═══ ANTENLER — 4x UHF/VHF dipol (gövde altından aşağı uzar) ═══
+  // Geometri: pivot noktası üstte, anten aşağı doğru uzar
+  const antLen=1.0;
+  const antGeo=new THREE.CylinderGeometry(0.004,0.006,antLen,6);
+  antGeo.translate(0,-antLen/2,0); // Pivot üste taşı → scale.y ile aşağı uzar
+  const antMat=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.8,roughness:0.2,envMap,envMapIntensity:0.5});
+  [{x:0.18,z:0.18,rx:0.1,rz:0.1},{x:-0.18,z:0.18,rx:0.1,rz:-0.1},
+   {x:0.18,z:-0.18,rx:-0.1,rz:0.1},{x:-0.18,z:-0.18,rx:-0.1,rz:-0.1}].forEach(p=>{
+    const ant=new THREE.Mesh(antGeo.clone(),antMat);
+    ant.position.set(p.x,-bodyH/2,p.z); // Gövde alt yüzeyinde başlar
+    ant.rotation.x=p.rx;ant.rotation.z=p.rz;
+    ant.scale.y=0; // Başlangıçta gizli, deploy'da 1'e gider
+    group.add(ant);CSAT.antennas.push(ant);
+  });
+
+  // ═══ LED GÖSTERGE PANELI (ön yüzde) ═══
+  const ledColors=[0x00ff9d,0xff0040,0x00f0ff,0xffc107];
+  const ledNames=['PWR','ERR','COM','GPS'];
+  ledColors.forEach((c,i)=>{
+    const led=new THREE.Mesh(new THREE.SphereGeometry(0.018,8,8),new THREE.MeshBasicMaterial({color:c}));
+    led.position.set(-0.12+i*0.08,0.45,bodyD/2+0.01);
+    group.add(led);CSAT.leds.push(led);
+  });
+
+  // ═══ S-BAND PATCH ANTEN (ön yüz, kare) ═══
+  const patchGeo=new THREE.BoxGeometry(0.12,0.12,0.01);
+  const patchMat=new THREE.MeshStandardMaterial({color:0x886600,metalness:0.85,roughness:0.2,envMap,envMapIntensity:0.6});
+  const patch=new THREE.Mesh(patchGeo,patchMat);
+  patch.position.set(0.12,-0.3,bodyD/2+0.005);group.add(patch);
+  // Patch edges
+  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(patchGeo),
+    new THREE.LineBasicMaterial({color:0xaa8800,opacity:0.5,transparent:true}))).position.copy(patch.position);
+
+  // ═══ MAGNETORQUER ÇUBUKLARI (görünen, X ve Z ekseni) ═══
+  const mqGeo=new THREE.CylinderGeometry(0.015,0.015,bodyH*0.9,6);
+  const mqMat=new THREE.MeshStandardMaterial({color:0x553300,metalness:0.3,roughness:0.5});
+  const mq1=new THREE.Mesh(mqGeo,mqMat);
+  mq1.position.set(bodyW/2-0.04,0,bodyD/2-0.04);group.add(mq1);
+  const mq2=new THREE.Mesh(mqGeo,mqMat);
+  mq2.position.set(-bodyW/2+0.04,0,bodyD/2-0.04);group.add(mq2);
+
+  // ═══ KILL SWITCH (kırmızı, alt yüz) ═══
+  const killGeo=new THREE.CylinderGeometry(0.03,0.03,0.02,12);
+  const killMat=new THREE.MeshBasicMaterial({color:0xff0040});
+  const kill=new THREE.Mesh(killGeo,killMat);
+  kill.position.set(0,-bodyH/2-0.01,0.15);kill.rotation.x=Math.PI/2;group.add(kill);
+
+  // ═══ DEPLOYMENT SWITCH (alt ray) ═══
+  const dsGeo=new THREE.BoxGeometry(0.06,0.02,0.04);
+  const dsMat=new THREE.MeshBasicMaterial({color:0x00ff9d});
+  const ds=new THREE.Mesh(dsGeo,dsMat);
+  ds.position.set(0,-bodyH/2-0.01,-0.15);group.add(ds);
+
+  // Başlangıç açısı
+  group.rotation.set(0.15,0.8,0.05);
+  // Uydu yörünge grubu — Dünya etrafında döner
+  const orbitGroup=new THREE.Group();
+  orbitGroup.position.set(0,-0.5,0); // Dünya merkezine hizala
+  group.position.set(3.5,0,0); // Dünya'dan uzak yörünge
+  group.scale.set(0.8,0.8,0.8);
+  orbitGroup.add(group);
+  // Yörünge eğimi (inklinasyon)
+  orbitGroup.rotation.z=15*Math.PI/180; // eğik yörünge
+  scene.add(orbitGroup);
+  CSAT.orbitGroup=orbitGroup;
+
+  // ═══ YILDIZLAR (çeşitli boyut ve parlaklık) ═══
+  const starsGeo=new THREE.BufferGeometry();
+  const sv=[],sColors=[],sSizes=[];
+  for(let i=0;i<800;i++){
+    sv.push((Math.random()-0.5)*60,(Math.random()-0.5)*60,(Math.random()-0.5)*60);
+    const bright=0.3+Math.random()*0.7;
+    sColors.push(bright,bright,bright+Math.random()*0.15);
+    sSizes.push(0.02+Math.random()*0.06);
+  }
+  starsGeo.setAttribute('position',new THREE.Float32BufferAttribute(sv,3));
+  starsGeo.setAttribute('color',new THREE.Float32BufferAttribute(sColors,3));
+  const starsMat=new THREE.PointsMaterial({size:0.05,vertexColors:true,transparent:true,opacity:0.9});
+  scene.add(new THREE.Points(starsGeo,starsMat));
+
+  // ═══ DÜNYA — NASA Blue Marble + Gerçekçi Atmosfer ═══
+  const earthRadius=1.8;
+  const earthGroup=new THREE.Group();
+  earthGroup.position.set(0,-0.5,0);
+  const texLoader=new THREE.TextureLoader();
+
+  // Yüksek çözünürlüklü küre geometrisi
+  const earthGeo=new THREE.SphereGeometry(earthRadius,64,48);
+
+  // NASA Blue Marble dokusu
+  const earthDayTex=texLoader.load('https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg');
+  const earthBumpTex=texLoader.load('https://unpkg.com/three-globe@2.31.1/example/img/earth-topology.png');
+
+  const earthMat=new THREE.MeshPhongMaterial({
+    map:earthDayTex,
+    bumpMap:earthBumpTex,
+    bumpScale:0.04,
+    shininess:25,
+    specular:new THREE.Color(0x333355)
+  });
+  const earth=new THREE.Mesh(earthGeo,earthMat);
+  earthGroup.add(earth);
+
+  // Gece ışıkları katmanı (karanlık tarafta şehir ışıkları)
+  const nightTex=texLoader.load('https://unpkg.com/three-globe@2.31.1/example/img/earth-night.jpg');
+  const nightMat=new THREE.MeshBasicMaterial({
+    map:nightTex,
+    transparent:true,
+    opacity:0.4,
+    blending:THREE.AdditiveBlending
+  });
+  const nightEarth=new THREE.Mesh(earthGeo.clone(),nightMat);
+  earthGroup.add(nightEarth);
+  CSAT.nightEarth=nightEarth;
+
+  // Bulut katmanı (gerçek bulut dokusu)
+  const cloudTex=texLoader.load('https://unpkg.com/three-globe@2.31.1/example/img/earth-water.png');
+  const cloudGeo=new THREE.SphereGeometry(earthRadius*1.008,56,40);
+  const cloudMat=new THREE.MeshPhongMaterial({
+    map:cloudTex,
+    transparent:true,
+    opacity:0.25,
+    depthWrite:false
+  });
+  const clouds=new THREE.Mesh(cloudGeo,cloudMat);
+  earthGroup.add(clouds);
+  CSAT.clouds=clouds;
+
+  // ═══ ATMOSFER — 6 katmanlı gerçekçi glow ═══
+  // İç atmosfer (ince mavi çizgi)
+  const atmo1=new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius*1.015,48,32),
+    new THREE.MeshBasicMaterial({color:0x88ccff,transparent:true,opacity:0.06,side:THREE.BackSide})
+  );
+  earthGroup.add(atmo1);
+
+  // Atmosfer katman 2
+  const atmo2=new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius*1.03,48,32),
+    new THREE.MeshBasicMaterial({color:0x4488ff,transparent:true,opacity:0.05,side:THREE.BackSide})
+  );
+  earthGroup.add(atmo2);
+
+  // Atmosfer katman 3
+  const atmo3=new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius*1.05,40,28),
+    new THREE.MeshBasicMaterial({color:0x3366dd,transparent:true,opacity:0.04,side:THREE.BackSide})
+  );
+  earthGroup.add(atmo3);
+
+  // Atmosfer katman 4
+  const atmo4=new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius*1.08,36,24),
+    new THREE.MeshBasicMaterial({color:0x2255bb,transparent:true,opacity:0.03,side:THREE.BackSide})
+  );
+  earthGroup.add(atmo4);
+
+  // Atmosfer katman 5 (geniş dış glow)
+  const atmo5=new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius*1.12,32,20),
+    new THREE.MeshBasicMaterial({color:0x1144aa,transparent:true,opacity:0.02,side:THREE.BackSide})
+  );
+  earthGroup.add(atmo5);
+
+  // Atmosfer katman 6 (çok geniş, zayıf)
+  const atmo6=new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius*1.18,28,16),
+    new THREE.MeshBasicMaterial({color:0x0033aa,transparent:true,opacity:0.01,side:THREE.BackSide})
+  );
+  earthGroup.add(atmo6);
+
+  // (Yörünge çizgisi kaldırıldı — CubeSat zaten görünür şekilde dönüyor)
+
+  scene.add(earthGroup);
+  CSAT.earthGroup=earthGroup;
+  CSAT.earth=earth;
+
+  // ═══ AY — Gerçek 2K doku, Dünya yörüngesinde ═══
+  const moonRadius=0.45; // Dünya'nın ~1/4'ü
+  const moonOrbitR=earthRadius+2.5; // Dünya'dan uzaklık
+  const moonOrbitGroup=new THREE.Group();
+  moonOrbitGroup.position.copy(earthGroup.position); // Dünya merkezine hizala
+  moonOrbitGroup.rotation.x=5.14*Math.PI/180; // Ay yörünge eğimi (5.14°)
+  moonOrbitGroup.rotation.z=8*Math.PI/180; // Ek eğim görsel için
+
+  // Ay küresi — gerçek doku
+  const moonTex=texLoader.load('/moon_texture.jpg');
+  const moonBumpTex=texLoader.load('/moon_texture.jpg'); // Aynı doku bump olarak da kullanılır
+  const moonGeo=new THREE.SphereGeometry(moonRadius,48,32);
+  const moonMat=new THREE.MeshPhongMaterial({
+    map:moonTex,
+    bumpMap:moonBumpTex,
+    bumpScale:0.02,
+    color:0xffffff,
+    shininess:5,
+    specular:new THREE.Color(0x111111)
+  });
+  const moon=new THREE.Mesh(moonGeo,moonMat);
+  moon.position.set(-moonOrbitR,0,0); // Uydunun karşı tarafında başlar
+
+  // Ay kendi ekseni etrafında kilitli dönüş (tidally locked — hep aynı yüzü gösterir)
+  moonOrbitGroup.add(moon);
+
+  // Ay yörünge çizgisi (ince, gri)
+  const moonOrbitPts=[];
+  for(let i=0;i<=96;i++){
+    const a=(i/96)*Math.PI*2;
+    moonOrbitPts.push(new THREE.Vector3(moonOrbitR*Math.cos(a),0,moonOrbitR*Math.sin(a)));
+  }
+  const moonOrbitLine=new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(moonOrbitPts),
+    new THREE.LineBasicMaterial({color:0x888888,transparent:true,opacity:0.12})
+  );
+  moonOrbitGroup.add(moonOrbitLine);
+
+  // Ay gölgesi (çok hafif karanlık taraf)
+  const moonShadow=new THREE.Mesh(
+    new THREE.SphereGeometry(moonRadius*1.005,32,32),
+    new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.3,side:THREE.BackSide})
+  );
+  moon.add(moonShadow);
+
+  scene.add(moonOrbitGroup);
+  CSAT.moon=moon;
+  CSAT.moonOrbitGroup=moonOrbitGroup;
+
+  // ═══ GÜNEŞ — Gerçekçi NASA SDO Kalitesinde ═══
+  const sunX=2, sunY=2, sunZ=-5;
+  const sunGroup=new THREE.Group();
+  sunGroup.position.set(sunX,sunY,sunZ);
+
+  // Gerçek 2K güneş dokusu (lokal sunucu — CORS yok)
+  const sunRealTex=texLoader.load('/sun_texture.jpg');
+
+  // Ana güneş küresi — gerçek NASA/SDO dokusu
+  const sunMesh=new THREE.Mesh(
+    new THREE.SphereGeometry(1.0,64,64),
+    new THREE.MeshBasicMaterial({map:sunRealTex})
+  );
+  sunGroup.add(sunMesh);
+
+  // ═══ CORONA — 8 katmanlı, gerçekçi geçiş ═══
+  const coronaDefs=[
+    {r:1.02,color:0xfffff0,op:0.35},
+    {r:1.06,color:0xfff8dd,op:0.25},
+    {r:1.14,color:0xffee88,op:0.15},
+    {r:1.28,color:0xffcc44,op:0.08},
+    {r:1.5,color:0xffaa22,op:0.04},
+    {r:1.8,color:0xff8811,op:0.025},
+    {r:2.3,color:0xff5500,op:0.012},
+    {r:3.2,color:0xff3300,op:0.005},
+  ];
+  const sunCorona=[];
+  coronaDefs.forEach(d=>{
+    const m=new THREE.Mesh(
+      new THREE.SphereGeometry(d.r,32,32),
+      new THREE.MeshBasicMaterial({color:d.color,transparent:true,opacity:d.op,side:THREE.BackSide})
+    );
+    sunGroup.add(m);sunCorona.push(m);
+  });
+
+  // ═══ PROMINENSLER — 10 adet, farklı boyutlarda ═══
+  const prominences=[];
+  for(let i=0;i<10;i++){
+    const angle=i*Math.PI/5+(Math.random()-0.5)*0.3;
+    const promLen=0.15+Math.random()*0.7;
+    const promThick=0.015+Math.random()*0.025;
+    const promArc=Math.PI*(0.3+Math.random()*0.5);
+    const promGeo=new THREE.TorusGeometry(promLen,promThick,8,20,promArc);
+    const hue=Math.random()>0.5?0xff4422:0xff6633;
+    const promMat=new THREE.MeshBasicMaterial({color:hue,transparent:true,opacity:0.1+Math.random()*0.2});
+    const prom=new THREE.Mesh(promGeo,promMat);
+    prom.position.set(Math.cos(angle)*0.96,Math.sin(angle)*0.96,(Math.random()-0.5)*0.4);
+    prom.rotation.z=angle+Math.PI/2;
+    prom.rotation.x=Math.random()*Math.PI;
+    sunGroup.add(prom);prominences.push(prom);
+  }
+  CSAT.prominences=prominences;
+
+  // ═══ GÜNEŞ RÜZGARI — 32 ışın, 3D dağılım ═══
+  for(let i=0;i<32;i++){
+    const theta=Math.random()*Math.PI*2;
+    const phi=Math.random()*Math.PI;
+    const rLen=1.1+Math.random()*3.0;
+    const dx=Math.sin(phi)*Math.cos(theta),dy=Math.sin(phi)*Math.sin(theta),dz=Math.cos(phi);
+    const pts=[new THREE.Vector3(dx*1.02,dy*1.02,dz*1.02),new THREE.Vector3(dx*rLen,dy*rLen,dz*rLen)];
+    const rMat=new THREE.LineBasicMaterial({color:0xffdd66,transparent:true,opacity:0.015+Math.random()*0.035});
+    sunGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),rMat));
+  }
+
+  // ═══ IŞIK KAYNAKLARI ═══
+  sunGroup.add(new THREE.PointLight(0xfff0dd,1.8,40));
+  sunGroup.add(new THREE.PointLight(0xffcc44,0.5,20));
+
+  scene.add(sunGroup);
+
+  CSAT.sunMesh=sunMesh;
+  CSAT.sunGroup=sunGroup;
+  CSAT.sunCorona=sunCorona;
+  CSAT.sunPos=new THREE.Vector3(sunX,sunY,sunZ);
+
+  CSAT.scene=scene;CSAT.camera=camera;CSAT.renderer=renderer;
+  CSAT.group=group;
+}
+
+function initCubeSatSize(){
+  if(!CSAT.renderer)return;
+  const canvas=document.getElementById('csatCvs');
+  if(!canvas)return;
+  const p=canvas.parentElement;
+  const w=p.clientWidth,h=p.clientHeight-52;
+  canvas.width=w;canvas.height=Math.max(h,120);
+  CSAT.camera.aspect=w/Math.max(h,120);
+  CSAT.camera.updateProjectionMatrix();
+  CSAT.renderer.setSize(w,Math.max(h,120));
+}
+
+function renderCubeSat(){
+  if(!CSAT.scene)return;
+
+  // Panel açma/kapama — 4 köşe, üstten aşağı
+  const pDiff=CSAT.panelAngleTarget-CSAT.panelAngle;
+  CSAT.panelAngle+=pDiff*0.04;
+  // Spring overshoot
+  const pOver=(Math.abs(pDiff)>0.02)?Math.sin(CSAT.panelAngle*2)*0.04*Math.abs(pDiff):0;
+  // Her panel kendi ekseninde döner
+  CSAT.panels.forEach(p=>{
+    const angle=(CSAT.panelAngle+pOver)*p.sign;
+    if(p.axis==='z') p.pivot.rotation.z=angle;
+    else p.pivot.rotation.x=angle;
+    // Panel kendi ekseni etrafında spin (güneş takibi)
+    if(p.axis==='z') p.spinGroup.rotation.z=CSAT.panelSpin;
+    else p.spinGroup.rotation.x=CSAT.panelSpin;
+  });
+  // Panel spin momentum
+  CSAT.panelSpin+=CSAT.panelSpinSpeed;
+  CSAT.panelSpinSpeed*=0.98;
+
+  // Anten deploy
+  const aDiff=CSAT.antennaTarget-CSAT.antennaProgress;
+  CSAT.antennaProgress+=aDiff*0.06;
+  CSAT.antennas.forEach(a=>{a.scale.y=CSAT.antennaProgress;});
+
+  // Uydu Dünya etrafında yörüngede dönüş
+  if(CSAT.orbitGroup) CSAT.orbitGroup.rotation.y+=0.004;
+
+  // ADCS Mod Bazlı Yönelim
+  if(CSAT.orbitGroup){
+    if(CSAT.mode==='IDLE'&&CSAT.sunPos){
+      // IDLE: Üst yüzey (+Y) güneşe bakar — enerji toplama modu
+      const sunLocal=CSAT.orbitGroup.worldToLocal(CSAT.sunPos.clone());
+      const sunDir=sunLocal.clone().sub(CSAT.group.position).normalize();
+      const targetQuat=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),sunDir);
+      CSAT.group.quaternion.slerp(targetQuat,0.05);
+    } else if(CSAT.mode==='AI_SCAN'&&CSAT.earthGroup){
+      // AI_SCAN: Alt yüzey (-Y, antenler+kamera) Dünya'ya bakar — tarama modu
+      const earthLocal=CSAT.orbitGroup.worldToLocal(CSAT.earthGroup.position.clone());
+      const toEarth=earthLocal.clone().sub(CSAT.group.position).normalize();
+      // -Y ekseni Dünya'ya baksın → +Y'yi ters yöne çevir
+      const awayFromEarth=toEarth.clone().negate();
+      const targetQuat=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),awayFromEarth);
+      CSAT.group.quaternion.slerp(targetQuat,0.05);
+    }
+  }
+
+  // Manuel dönüş momentum
+  CSAT.group.rotation.y+=CSAT.yawVel;
+  CSAT.group.rotation.x+=CSAT.pitchVel;
+  CSAT.group.rotation.z+=CSAT.rollVel;
+  CSAT.yawVel*=0.94;CSAT.pitchVel*=0.94;CSAT.rollVel*=0.94;
+
+  // LED'ler yanıp sönsün
+  CSAT.leds.forEach((led,i)=>{
+    const t=ST.tick*0.06+i*1.8;
+    const v=i===1?(Math.sin(t*2)>0.3?1:0.1):(0.3+Math.sin(t)*0.7);
+    led.material.opacity=v;
+    led.scale.setScalar(0.7+v*0.5);
+  });
+
+  // Lens ring glow pulse
+  if(CSAT.lensRing){
+    CSAT.lensRing.material.opacity=0.3+Math.sin(ST.tick*0.04)*0.2;
+  }
+  // IR sensör glow
+  if(CSAT.irGlow){
+    CSAT.irGlow.material.opacity=0.2+Math.sin(ST.tick*0.06)*0.2;
+  }
+
+  // ═══ BATARYA SİSTEMİ ═══
+  if(ST.tick%60===0){ // her ~1 saniyede güncelle
+    if(CSAT.mode==='AI_SCAN'){
+      // AI_SCAN: %15 üstünde hızlı, altında yavaş (gerilim düşüşü simülasyonu)
+      const drain=CSAT.battery>15?4:1;
+      CSAT.battery=Math.max(0,CSAT.battery-drain);
+    } else {
+      // IDLE: güneş panelleri şarj ediyor (+0.2%/saniye)
+      CSAT.battery=Math.min(100,CSAT.battery+0.2);
+    }
+    // Batarya UI güncelle
+    const bp=document.getElementById('batPercent');
+    const bb=document.getElementById('batBar');
+    const bd=document.getElementById('batDrain');
+    const bs=document.getElementById('batSolar');
+    const br=document.getElementById('batRemain');
+    const bt=document.getElementById('batTemp');
+    const bm=document.getElementById('batModeBadge');
+    if(bp){
+      const b=CSAT.battery;
+      bp.textContent=b.toFixed(1)+'%';
+      bp.style.color=b<15?'var(--critical)':b<30?'var(--warn)':'var(--accent2)';
+      bb.style.width=b+'%';
+      bb.style.background=b<15?'var(--critical)':b<30?'var(--warn)':'var(--accent2)';
+      if(CSAT.mode==='AI_SCAN'){
+        bd.textContent='-12.4 W';bd.style.color='var(--accent3)';
+        bs.textContent='0 W (paneller ters)';bs.style.color='var(--textd)';
+        const mins=Math.floor(b/4/60),secs=Math.floor((b/4)%60);
+        br.textContent=String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0');
+        br.style.color=b<15?'var(--critical)':'var(--warn)';
+        bt.textContent='+'+(28+Math.random()*0.5).toFixed(0)+'°C';
+        bm.textContent='HARCANYOR';bm.style.color='var(--accent3)';
+      } else {
+        bd.textContent='-0.5 W';bd.style.color='var(--accent)';
+        bs.textContent='+15.2 W';bs.style.color='var(--accent2)';
+        const mins=Math.floor((100-b)/0.2/60),secs=Math.floor(((100-b)/0.2)%60);
+        br.textContent=b>=99.5?'DOLU':String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0');
+        br.style.color='var(--accent2)';
+        bt.textContent='+'+(23+Math.random()*0.3).toFixed(0)+'°C';
+        bm.textContent='ŞARJ';bm.style.color='var(--accent2)';
+      }
+      // Üst bar batarya değeri de güncelle
+      const topBat=document.getElementById('batVal');
+      if(topBat){
+        topBat.textContent=Math.round(b)+'%';
+        topBat.className=b<15?'tb-stat-val critical':b<30?'tb-stat-val warn':'tb-stat-val green';
+      }
+    }
+    // %15 — ekran ortasında büyük uyarı
+    if(CSAT.battery<15&&CSAT.battery>=10&&!CSAT.batteryWarned&&CSAT.mode==='AI_SCAN'){
+      CSAT.batteryWarned=true;
+      addAlert('a-c','⚠ BATARYA KRİTİK: %'+CSAT.battery.toFixed(0)+' — IDLE MODUNA GEÇİN!');
+      showBatteryWarning();
+    }
+    // %10 altı — otonom IDLE'a geç
+    if(CSAT.battery<=10&&CSAT.mode==='AI_SCAN'){
+      setCsatMode('IDLE');
+      hideBatteryWarning();
+      addAlert('a-c','⚠ BATARYA %'+CSAT.battery.toFixed(0)+' — OTONOM IDLE GEÇİŞİ YAPILDI');
+      document.getElementById('ui').classList.add('shake');
+      setTimeout(()=>document.getElementById('ui').classList.remove('shake'),500);
+    }
+  }
+
+  // ═══ DÜNYA ANİMASYONLARI ═══
+  if(CSAT.earth){
+    // Dünya kendi ekseni etrafında yavaş döner (23.5° eğim)
+    CSAT.earth.rotation.y+=0.004;
+    // Gece katmanı senkron döner
+    if(CSAT.nightEarth)CSAT.nightEarth.rotation.y=CSAT.earth.rotation.y;
+    // Bulutlar biraz daha hızlı
+    if(CSAT.clouds)CSAT.clouds.rotation.y+=0.0012;
+  }
+
+  // ═══ AY ANİMASYONLARI ═══
+  if(CSAT.moonOrbitGroup){
+    // Ay Dünya etrafında yörüngede döner (Dünya'dan yavaş)
+    CSAT.moonOrbitGroup.rotation.y+=0.003;
+    // Ay tidally locked — kendi ekseni = yörünge hızı (hep aynı yüz)
+    if(CSAT.moon) CSAT.moon.rotation.y=-CSAT.moonOrbitGroup.rotation.y;
+  }
+
+  // ═══ GÜNEŞ ANİMASYONLARI ═══
+  if(CSAT.sunMesh){
+    // Güneş yüzeyi diferansiyel rotasyon (ekvator daha hızlı)
+    CSAT.sunMesh.rotation.y+=0.0012;
+    // Nefes alma pulse (çoklu frekans)
+    const sp=1+Math.sin(ST.tick*0.012)*0.015+Math.sin(ST.tick*0.031)*0.008+Math.sin(ST.tick*0.067)*0.005;
+    CSAT.sunMesh.scale.setScalar(sp);
+    // Corona katmanları bağımsız pulse
+    if(CSAT.sunCorona){
+      const basOp=[0.35,0.25,0.15,0.08,0.04,0.025,0.012,0.005];
+      CSAT.sunCorona.forEach((c,i)=>{
+        const phase=ST.tick*0.018+i*1.1;
+        c.material.opacity=basOp[i]+Math.sin(phase)*basOp[i]*0.35;
+        c.scale.setScalar(1+Math.sin(phase*0.6)*0.015);
+      });
+    }
+    // Prominensler hafif titreşim
+    if(CSAT.prominences){
+      CSAT.prominences.forEach((p,i)=>{
+        p.material.opacity=0.15+Math.sin(ST.tick*0.03+i*1.2)*0.1;
+        p.scale.setScalar(1+Math.sin(ST.tick*0.02+i)*0.08);
+      });
+    }
+    // Güneş grubu çok hafif salınım
+    if(CSAT.sunGroup){
+      CSAT.sunGroup.rotation.z=Math.sin(ST.tick*0.004)*0.015;
+      CSAT.sunGroup.position.x-=0.0003; // çok yavaş sola kayma
+      CSAT.sunPos.x=CSAT.sunGroup.position.x;
+    }
+  }
+
+  CSAT.renderer.render(CSAT.scene,CSAT.camera);
+}
+
+function deployPanels(deg){
+  // 0° = açık (paneller dışarı uzanır), 90° = kapalı (gövde kenarına katlanır)
+  CSAT.panelAngleTarget=deg*Math.PI/180;
+  updateCsatStatus();
+  if(deg===0) addAlert('a-o','GÜNEŞ PANELLERİ AÇILDI — 30W üretim başladı');
+  else addAlert('a-i','GÜNEŞ PANELLERİ KATLANARAK KAPATILDI');
+}
+
+function spinPanels(){
+  CSAT.panelSpinSpeed+=0.03;
+  addAlert('a-i','PANEL DÖNDÜRME — Güneş takip açısı ayarlanıyor');
+}
+
+function toggleAntennas(){
+  CSAT.antennasDeployed=!CSAT.antennasDeployed;
+  CSAT.antennaTarget=CSAT.antennasDeployed?1:0;
+  const btn=document.getElementById('antennaBtn');
+  btn.textContent=CSAT.antennasDeployed?'ANTEN KAPAT':'ANTEN AÇ';
+  btn.classList.toggle('active',CSAT.antennasDeployed);
+  updateCsatStatus();
+  addAlert(CSAT.antennasDeployed?'a-o':'a-i',
+    CSAT.antennasDeployed?'UHF/VHF ANTENLERİ DEPLOY — RF bağlantı hazır':'ANTENLER GERİ ÇEKİLDİ');
+}
+
+function csatRotate(dir){
+  CSAT.autoRotate=false;
+  const f=0.08;
+  if(dir==='yaw+')CSAT.yawVel+=f;
+  if(dir==='yaw-')CSAT.yawVel-=f;
+  if(dir==='pitch+')CSAT.pitchVel+=f;
+  if(dir==='pitch-')CSAT.pitchVel-=f;
+  if(dir==='roll')CSAT.rollVel+=f;
+}
+
+function setCsatMode(mode){
+  CSAT.mode=mode;
+  CSAT.batteryWarned=false;
+  // Buton stilleri
+  document.getElementById('modeIdleBtn').style.background=mode==='IDLE'?'var(--accent)':'transparent';
+  document.getElementById('modeIdleBtn').style.color=mode==='IDLE'?'#000':'var(--accent)';
+  document.getElementById('modeScanBtn').style.background=mode==='AI_SCAN'?'var(--accent3)':'transparent';
+  document.getElementById('modeScanBtn').style.color=mode==='AI_SCAN'?'#000':'var(--accent)';
+  // Batarya paneli her zaman görünür, tespit listesi de her zaman görünür
+  updateCsatStatus();
+  if(mode==='IDLE'){
+    hideBatteryWarning();
+    addAlert('a-o','ADCS: IDLE MODU — Güneş panelleri güneşe yöneldi, şarj başladı');
+  } else {
+    addAlert('a-w','ADCS: AI_SCAN MODU — Kamera+IR aktif, güç harcanıyor!');
+  }
+}
+
+// ─── AI TARAMA SİMÜLASYONU ──────────────────────────────────────
+// Gerçekçi SVG ikonlar (dosyadan yüklenir)
+const ICON_PATHS={
+  tank:'/icons/tank.svg',apc:'/icons/apc.svg',artillery:'/icons/artillery.svg',
+  vehicle:'/icons/vehicle.svg',infantry:'/icons/infantry.svg',sam:'/icons/sam.svg',
+  uav:'/icons/uav.svg',radar:'/icons/radar.svg',fort:'/icons/fort.svg'
+};
+
+const AI_DETECT_TYPES=[
+  {type:'TANK',cls:'T-72',iconPath:ICON_PATHS.tank,color:'#ff4560',threat:'HIGH'},
+  {type:'TANK',cls:'M60-T',iconPath:ICON_PATHS.tank,color:'#ff4560',threat:'HIGH'},
+  {type:'TANK',cls:'LEOPARD-2',iconPath:ICON_PATHS.tank,color:'#ff4560',threat:'HIGH'},
+  {type:'ZPT',cls:'ACV-15',iconPath:ICON_PATHS.apc,color:'#ffc107',threat:'MED'},
+  {type:'ZPT',cls:'BTR-80',iconPath:ICON_PATHS.apc,color:'#ffc107',threat:'MED'},
+  {type:'OBÜS',cls:'T-155 FIRTINA',iconPath:ICON_PATHS.artillery,color:'#ff6b35',threat:'HIGH'},
+  {type:'OBÜS',cls:'M110-A2',iconPath:ICON_PATHS.artillery,color:'#ff6b35',threat:'HIGH'},
+  {type:'ARAÇ',cls:'KIRPI MRAP',iconPath:ICON_PATHS.vehicle,color:'#ffc107',threat:'MED'},
+  {type:'ARAÇ',cls:'COBRA-II',iconPath:ICON_PATHS.vehicle,color:'#ffc107',threat:'LOW'},
+  {type:'PERSONEL',cls:'PIYADE TAKIMI',iconPath:ICON_PATHS.infantry,color:'#00f0ff',threat:'LOW'},
+  {type:'PERSONEL',cls:'KOMANDO TİMİ',iconPath:ICON_PATHS.infantry,color:'#00f0ff',threat:'MED'},
+  {type:'MEVZİ',cls:'SAVUNMA MEVZİSİ',iconPath:ICON_PATHS.fort,color:'#aaaaaa',threat:'LOW'},
+  {type:'HAVA SAVUNMA',cls:'HAWK BATARYASI',iconPath:ICON_PATHS.sam,color:'#ff0040',threat:'CRITICAL'},
+  {type:'İHA',cls:'TB-2 BAYRAKTAR',iconPath:ICON_PATHS.uav,color:'#ffc107',threat:'HIGH'},
+  {type:'RADAR',cls:'MOBİL RADAR',iconPath:ICON_PATHS.radar,color:'#ff6b35',threat:'HIGH'},
+];
+let aiScanMarkers=[];
+let aiScanActive=false;
+
+function startAIScan(){
+  const lat=parseFloat(document.getElementById('scanLat').value);
+  const lon=parseFloat(document.getElementById('scanLon').value);
+  if(isNaN(lat)||isNaN(lon)){addAlert('a-w','Geçersiz koordinat!');return;}
+
+  // AI_SCAN moduna geç
+  if(CSAT.mode!=='AI_SCAN')setCsatMode('AI_SCAN');
+
+  aiScanActive=true;
+  document.getElementById('scanStatus').textContent='TARANIYOR...';
+  document.getElementById('scanStatus').style.color='var(--warn)';
+
+  addAlert('a-w',`AI TARAMA BAŞLADI — Hedef: ${lat.toFixed(4)}°N ${lon.toFixed(4)}°E`);
+
+  // Haritayı koordinata uçur (maksimum zoom)
+  ST.map.flyTo([lat,lon],17,{duration:2.5});
+
+  // Tarama bölgesi çemberi
+  const scanCircle=L.circle([lat,lon],{
+    radius:800,color:'#ff4560',weight:1.5,fillColor:'#ff4560',
+    fillOpacity:0.05,dashArray:'8 4'
+  }).addTo(ST.map);
+
+  // 3-5 saniye tarama süresi, sonra tespitler gelir
+  addAlert('a-i','YOLOv8 model çalışıyor — görüntü analiz ediliyor...');
+
+  setTimeout(()=>{
+    // Tarama tamamlandı — rastgele 3-7 tespit oluştur
+    const detectCount=3+Math.floor(Math.random()*5);
+    addAlert('a-o',`AI TESPİT: ${detectCount} nesne bulundu — sınıflandırılıyor...`);
+
+    // Tespitleri sırayla göster (her 600ms bir)
+    for(let i=0;i<detectCount;i++){
+      setTimeout(()=>{
+        const det=AI_DETECT_TYPES[Math.floor(Math.random()*AI_DETECT_TYPES.length)];
+        const dlat=lat+(Math.random()-0.5)*0.004;
+        const dlon=lon+(Math.random()-0.5)*0.004;
+        const conf=(85+Math.random()*14).toFixed(1);
+
+        // Haritada gerçekçi SVG ikon marker
+        const detIcon=L.divIcon({
+          html:`<div style="position:relative;text-align:center;">
+            <div style="filter:drop-shadow(0 0 8px ${det.color}) drop-shadow(0 0 3px rgba(0,0,0,.8));margin-bottom:2px;">
+              <img src="${det.iconPath}" width="48" height="30" style="display:block;margin:0 auto;">
+            </div>
+            <div style="background:rgba(0,0,0,.75);padding:1px 6px;border-radius:2px;border:1px solid ${det.color};display:inline-block;">
+              <span style="font-family:var(--font);font-size:8px;font-weight:bold;color:${det.color};letter-spacing:1px;">${det.cls}</span>
+              <span style="font-family:var(--font);font-size:7px;color:var(--accent2);margin-left:4px;">${conf}%</span>
+            </div>
+          </div>`,
+          iconSize:[80,50],iconAnchor:[40,25],className:''
+        });
+        const marker=L.marker([dlat,dlon],{icon:detIcon,zIndexOffset:800}).addTo(ST.map);
+        marker.bindPopup(`<div style="font-family:var(--font);font-size:9px;color:#b8cfe0;min-width:200px;">
+          <div style="text-align:center;margin-bottom:6px;">
+            <img src="${det.iconPath}" width="64" height="40" style="filter:drop-shadow(0 0 6px ${det.color});">
+          </div>
+          <div style="color:${det.color};font-size:12px;font-weight:bold;margin-bottom:4px;">${det.type} — ${det.cls}</div>
+          <div>KOORDİNAT: ${dlat.toFixed(5)}°N ${dlon.toFixed(5)}°E</div>
+          <div>AI GÜVEN: <span style="color:var(--accent2);font-weight:bold;font-size:11px;">${conf}%</span></div>
+          <div>TEHDİT: <span style="color:${det.color};font-weight:bold;">${det.threat}</span></div>
+          <div style="margin-top:6px;padding-top:4px;border-top:1px solid rgba(0,240,255,.15);">
+            <span style="color:var(--accent);">YOLOv8-nano</span> · <span style="color:var(--textd);">Myriad 2 VPU · EDGE AI</span>
+          </div>
+        </div>`,{className:'l-popup'});
+        aiScanMarkers.push(marker);
+
+        // Tespit bip sesi
+        try{playDetectBeep();}catch(e){}
+
+        // Alert
+        addAlert(det.threat==='CRITICAL'?'a-c':det.threat==='HIGH'?'a-d':'a-w',
+          `AI TESPİT #${i+1}: ${det.type} (${det.cls}) — ${conf}% güven — ${dlat.toFixed(4)}°N`);
+
+        // Son tespitte tarama tamamlandı
+        if(i===detectCount-1){
+          document.getElementById('scanStatus').textContent=detectCount+' TESPİT';
+          document.getElementById('scanStatus').style.color='var(--accent2)';
+          addAlert('a-o',`AI TARAMA TAMAMLANDI — ${detectCount} hedef tespit ve sınıflandırıldı`);
+          addAlert('a-i',`Veri paketi: ${detectCount*50} byte şifreli → yer istasyonuna gönderildi`);
+          aiScanActive=false;
+        }
+      },(i+1)*700);
+    }
+
+    // Tarama çemberi 10 saniye sonra kaldır
+    setTimeout(()=>{ST.map.removeLayer(scanCircle);},15000);
+
+  },3000); // 3 saniye tarama süresi
+}
+
+// Clear'da AI scan marker'larını da temizle
+const origClearAll=typeof clearAll==='function'?clearAll:null;
+
+// ─── 3D FIRLATMA SEKANS (SİNEMATİK) ────────────────────────────
+let launchActive=false;
+
+function startLaunch(){
+  if(launchActive)return;
+  launchActive=true;
+  CSAT.launchT=0;
+
+  // Panelleri kapalı yap
+  CSAT.panelAngle=Math.PI/2;CSAT.panelAngleTarget=Math.PI/2;
+  CSAT.antennaTarget=0;CSAT.antennaProgress=0;CSAT.antennasDeployed=false;
+  if(CSAT.group)CSAT.group.visible=false;
+  if(CSAT.orbitGroup)CSAT.orbitGroup.visible=false;
+
+  // ═══ FAZ 1: HARİTA ÜZERİNDE GERİ SAYIM + KALKIŞ ═══
+  // Haritayı fırlatma noktasına uçur (Sinop Uzay Üssü)
+  const LAUNCH_LAT=42.03,LAUNCH_LON=35.15;
+  ST.map.flyTo([LAUNCH_LAT,LAUNCH_LON],17,{duration:2});
+
+  addAlert('a-w','FIRLATMA SEKANS — Sinop Uzay Üssü, Türkiye');
+
+  // Harita üzerine Three.js 3D overlay canvas oluştur
+  const mapEl=document.getElementById('map-area');
+  const overlayCvs=document.createElement('canvas');
+  overlayCvs.id='launchCanvas';
+  overlayCvs.style.cssText='position:absolute;inset:0;z-index:50;pointer-events:none;';
+  overlayCvs.width=mapEl.clientWidth;overlayCvs.height=mapEl.clientHeight;
+  mapEl.appendChild(overlayCvs);
+
+  // Launch info overlay
+  const infoDiv=document.createElement('div');
+  infoDiv.id='launchInfo';
+  infoDiv.style.cssText='position:absolute;inset:0;z-index:51;pointer-events:none;';
+  infoDiv.innerHTML=`
+    <div id="lCountdown" style="position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-family:var(--font2);font-size:72px;color:var(--accent);text-shadow:0 0 40px var(--accent),0 0 80px rgba(0,240,255,.3);"></div>
+    <div id="lPhase" style="position:absolute;top:55%;left:50%;transform:translateX(-50%);font-family:var(--font);font-size:12px;color:var(--accent2);letter-spacing:4px;text-shadow:0 0 15px var(--accent2);"></div>
+    <div id="lTelemetry" style="position:absolute;top:12px;right:12px;font-family:var(--font);font-size:10px;color:var(--warn);text-align:right;line-height:2;background:rgba(0,0,0,.6);padding:8px 12px;border:1px solid var(--border);border-radius:4px;"></div>
+  `;
+  mapEl.appendChild(infoDiv);
+
+  // Mini Three.js sahne — sadece roket
+  const lScene=new THREE.Scene();
+  const lCam=new THREE.PerspectiveCamera(50,overlayCvs.width/overlayCvs.height,0.01,50);
+  const lRenderer=new THREE.WebGLRenderer({canvas:overlayCvs,alpha:true,antialias:true});
+  lRenderer.setSize(overlayCvs.width,overlayCvs.height);
+  lRenderer.setClearColor(0x000000,0);
+
+  // Işık
+  lScene.add(new THREE.AmbientLight(0x556677,0.5));
+  const lSun=new THREE.DirectionalLight(0xfff5e0,1.5);lSun.position.set(3,5,2);lScene.add(lSun);
+
+  // Roket modeli — daha büyük ve detaylı
+  const rocket=new THREE.Group();
+  const rMat=new THREE.MeshPhongMaterial({color:0xdddddd,shininess:80,specular:0xffffff});
+  const rBody=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,1.2,20),rMat);
+  rocket.add(rBody);
+  // Kırmızı bantlar
+  [0.25,0,-0.15].forEach(y=>{
+    rocket.add(new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.085,0.04,20),
+      new THREE.MeshPhongMaterial({color:0xcc2222,shininess:60})));
+    rocket.children[rocket.children.length-1].position.y=y;
+  });
+  // Burun
+  rocket.add(new THREE.Mesh(new THREE.ConeGeometry(0.08,0.3,20),
+    new THREE.MeshPhongMaterial({color:0xee3333,shininess:80})));
+  rocket.children[rocket.children.length-1].position.y=0.75;
+  // Kanatçıklar
+  for(let i=0;i<4;i++){
+    const fin=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.18,0.012),rMat);
+    fin.position.set(Math.cos(i*Math.PI/2)*0.09,-0.5,Math.sin(i*Math.PI/2)*0.09);
+    fin.rotation.y=i*Math.PI/2;
+    rocket.add(fin);
+  }
+  // Nozzle
+  rocket.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.07,0.1,12),
+    new THREE.MeshPhongMaterial({color:0x333333,shininess:100})));
+  rocket.children[rocket.children.length-1].position.y=-0.65;
+
+  // Alev
+  const flame=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.8,12),
+    new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0}));
+  flame.position.y=-1.0;flame.rotation.x=Math.PI;rocket.add(flame);
+  const flame2=new THREE.Mesh(new THREE.ConeGeometry(0.035,0.5,8),
+    new THREE.MeshBasicMaterial({color:0xffee44,transparent:true,opacity:0}));
+  flame2.position.y=-0.85;flame2.rotation.x=Math.PI;rocket.add(flame2);
+
+  // Roket alt ekran ortasında — haritanın üstünde duruyor gibi
+  rocket.position.set(0,-1.5,0);
+  lCam.position.set(1.5,0,1.5);
+  lCam.lookAt(0,0,0);
+  lScene.add(rocket);
+
+  // Duman parçacıkları
+  const smokes=[];
+  for(let i=0;i<30;i++){
+    const s=new THREE.Mesh(new THREE.SphereGeometry(0.02,6,6),
+      new THREE.MeshBasicMaterial({color:0x999999,transparent:true,opacity:0}));
+    lScene.add(s);smokes.push(s);
+  }
+
+  CSAT._mapLaunch={lScene,lCam,lRenderer,rocket,flame,flame2,smokes,overlayCvs,infoDiv,LAUNCH_LAT,LAUNCH_LON};
+
+  // 2.5 saniye sonra geri sayım başlasın (harita uçuşu bitsin)
+  setTimeout(()=>{CSAT.launchT=1;},2500);
+}
+
+function updateLaunch(){
+  if(!launchActive||!CSAT._mapLaunch||CSAT.launchT===0)return;
+  CSAT.launchT++;
+  const t=CSAT.launchT;
+  const ML=CSAT._mapLaunch;
+  const cdEl=document.getElementById('lCountdown');
+  const phEl=document.getElementById('lPhase');
+  const tlEl=document.getElementById('lTelemetry');
+
+  // ═══ GERİ SAYIM (1-600 ≈ 10s) ═══
+  if(t<600){
+    const sec=Math.ceil((600-t)/60);
+    cdEl.textContent='T-'+sec;
+    phEl.textContent=sec>5?'SİSTEM KONTROL — TÜM İSTASYONLAR GO':sec>2?'ANA MOTOR ATEŞLEME SİRASI':'KALKIŞ HAZIRLIĞI';
+    tlEl.innerHTML='KONUM: 42.03°N 35.15°E<br>YÜKSEKLİK: 0 m<br>HIZ: 0 m/s<br>RAMPA: AKTİF';
+    // Motor ısınma
+    if(t>400){ML.flame.material.opacity=0.15+Math.sin(t*0.2)*0.1;ML.flame.scale.setScalar(0.25);}
+    // Render
+    ML.lRenderer.render(ML.lScene,ML.lCam);
+    return;
+  }
+
+  // ═══ ATEŞLEME + KALKIŞ (600-2400 ≈ 30s) ═══
+  if(t===600){
+    cdEl.textContent='ATEŞLEME';cdEl.style.color='#ff4500';
+    phEl.textContent='ANA MOTOR TAM GÜÇ — KALKIŞ';
+    addAlert('a-c','ATEŞLEME — KALKIŞ!');
+    try{playDetectBeep();}catch(e){}
+  }
+
+  const ft=t-600;
+  const totalMapFlight=1800; // ~30s haritada
+
+  if(ft>=0&&ft<totalMapFlight){
+    const progress=ft/totalMapFlight;
+    const altKm=Math.round(progress*progress*500);
+    const speed=Math.round(progress*7800);
+
+    // Roket yukarı hareket — ekranın altından çıkıp yukarı gidiyor
+    ML.rocket.position.y=-1.5+progress*4;
+
+    // Alev
+    const fs=0.5+progress+Math.sin(t*0.4)*0.2;
+    ML.flame.scale.set(fs,fs+Math.random()*0.3,fs);
+    ML.flame.material.opacity=0.7+Math.random()*0.3;
+    ML.flame.material.color.setHex(Math.random()>0.3?0xff6600:0xffaa00);
+    ML.flame2.scale.setScalar(0.4+Math.random()*0.2);
+    ML.flame2.material.opacity=0.8;
+
+    // Duman
+    if(ft%4===0){
+      const si=Math.floor((ft/4)%ML.smokes.length);
+      const s=ML.smokes[si];
+      s.position.copy(ML.rocket.position);s.position.y-=0.5;
+      s.position.x+=(Math.random()-0.5)*0.1;s.position.z+=(Math.random()-0.5)*0.1;
+      s.material.opacity=0.6;s.scale.setScalar(0.3);
+    }
+    ML.smokes.forEach(s=>{if(s.material.opacity>0){s.material.opacity*=0.97;s.scale.multiplyScalar(1.02);s.position.y-=0.01;}});
+
+    // Kamera — roket yükseldikçe takip + hafif dönüş
+    const camAngle=t*0.001;
+    const camDist=1.5+progress*2;
+    ML.lCam.position.set(Math.sin(camAngle)*camDist,ML.rocket.position.y+0.5,Math.cos(camAngle)*camDist);
+    ML.lCam.lookAt(ML.rocket.position);
+
+    // Max-Q titreşim
+    if(progress>0.05&&progress<0.2){
+      ML.lCam.position.x+=Math.sin(t*3)*0.008;
+      ML.lCam.position.z+=Math.cos(t*4)*0.006;
+    }
+
+    // Harita zoom out (roket yükseldikçe)
+    const zoom=17-progress*14; // 17 → 3
+    try{ST.map.setView([ML.LAUNCH_LAT,ML.LAUNCH_LON],Math.max(3,zoom),{animate:false});}catch(e){}
+
+    // Overlay arka plan — yükseldikçe karartma (uzay)
+    ML.overlayCvs.style.background=`rgba(0,0,10,${Math.min(0.85,progress*1.2)})`;
+
+    // UI
+    cdEl.textContent=altKm+' km';cdEl.style.fontSize='52px';
+    cdEl.style.color=altKm>100?'#00ff9d':'#ffc107';
+    const phase=altKm<10?'KALKIŞ':altKm<40?'MAX-Q — MAKSİMUM BASINÇ':altKm<100?'1. KADEME AYRILMASI':altKm<250?'KARMAN HATTI AŞILDI':'YÖRÜNGE YERLEŞTİRME';
+    phEl.textContent=phase;
+    tlEl.innerHTML=`KONUM: 42.03°N 35.15°E<br>YÜKSEKLİK: <b>${altKm} km</b><br>HIZ: <b>${speed} m/s</b><br>İVME: ${(progress*32).toFixed(1)} m/s²<br>SAFHA: ${phase}`;
+
+    if(ft===120)addAlert('a-i','Max-Q geçildi');
+    if(ft===500)addAlert('a-o','Kármán hattı — Uzaya çıkış!');
+    if(ft===1000)addAlert('a-i','Yörünge yerleştirme');
+
+    ML.lRenderer.render(ML.lScene,ML.lCam);
+  }
+
+  // ═══ 3D SAHNEYE GEÇİŞ (totalMapFlight) ═══
+  if(ft===totalMapFlight){
+    addAlert('a-o','GÖLGE-1 P-POD ayrılması — CubeSat serbest!');
+    cdEl.textContent='DEPLOY';cdEl.style.color='#00ff9d';
+    phEl.textContent='CUBESAT AYRILMASI — 3D GÖRÜNÜME GEÇİŞ';
+
+    // Harita overlay'ini kaldır
+    setTimeout(()=>{
+      ML.overlayCvs.remove();
+      ML.infoDiv.remove();
+      ML.lRenderer.dispose();
+      CSAT._mapLaunch=null;
+
+      // 3D fullscreen aç
+      if(!csatFullscreen)toggleFullscreen3D();
+
+      // CubeSat göster
+      if(CSAT.group)CSAT.group.visible=true;
+      if(CSAT.orbitGroup)CSAT.orbitGroup.visible=true;
+
+      // Haritayı normale döndür
+      try{ST.map.flyTo([39.5,33],6,{duration:1});}catch(e){}
+
+      // Overlay
+      document.getElementById('launchOverlay').style.display='block';
+      const cd2=document.getElementById('launchCountdown');
+      const ph2=document.getElementById('launchPhaseText');
+      cd2.textContent='DEPLOY';cd2.style.color='#00ff9d';cd2.style.opacity='1';cd2.style.fontSize='52px';
+      ph2.textContent='DETUMBLING — ADCS STABİLİZASYON';ph2.style.opacity='1';
+
+      // Detumbling
+      let tumbleT=0;
+      const tumbleI=setInterval(()=>{
+        tumbleT++;
+        const tumble=Math.max(0,1-tumbleT/150);
+        if(CSAT.group){CSAT.group.rotation.x+=0.04*tumble;CSAT.group.rotation.z+=0.03*tumble;}
+        if(tumbleT===100){ph2.textContent='STABİL — YÖNELİM SAĞLANDI';addAlert('a-o','ADCS tamamlandı');}
+        if(tumbleT===180){
+          deployPanels(0);cd2.textContent='500 km';ph2.textContent='GÜNEŞ PANELLERİ AÇILIYOR';
+          addAlert('a-o','Güneş panelleri deploy');
+        }
+        if(tumbleT===260){
+          CSAT.antennaTarget=1;CSAT.antennasDeployed=true;
+          ph2.textContent='ANTENLER DEPLOY';addAlert('a-o','Antenler deploy');
+        }
+        if(tumbleT>=360){
+          clearInterval(tumbleI);
+          launchActive=false;
+          document.getElementById('launchOverlay').style.display='none';
+          if(csatFullscreen)toggleFullscreen3D();
+          addAlert('a-o','GÖLGE-1 NOMİNAL YÖRÜNGEDE — OPERASYONEL');
+          document.getElementById('botStatus').textContent='GÖLGE-1 OPERASYONEL';
+        }
+      },16);
+    },1500);
+  }
+}
+
+// (eski orphan kod kaldırıldı)
+
+function showBatteryWarning(){
+  const w=document.getElementById('batteryWarning');
+  w.style.display='block';
+  // Batarya değerini güncelle
+  const iv=setInterval(()=>{
+    const v=document.getElementById('batWarningVal');
+    if(v)v.textContent=CSAT.battery.toFixed(0)+'%';
+    if(CSAT.mode==='IDLE'||CSAT.battery<=10)clearInterval(iv);
+  },200);
+}
+function hideBatteryWarning(){
+  document.getElementById('batteryWarning').style.display='none';
+}
+
+function resetCsatView(){
+  CSAT.autoRotate=true;
+  CSAT.yawVel=0;CSAT.pitchVel=0;CSAT.rollVel=0;
+  CSAT.group.rotation.set(0.15,0.8,0.05);
+}
+
+let csatFullscreen=false;
+function toggleFullscreen3D(){
+  const strip=document.getElementById('bottom-strip');
+  csatFullscreen=!csatFullscreen;
+  strip.classList.toggle('fullscreen-3d',csatFullscreen);
+  document.getElementById('fsBtn').textContent=csatFullscreen?'✕':'⛶';
+  setTimeout(()=>{
+    const w=csatFullscreen?window.innerWidth:strip.clientWidth;
+    const h=csatFullscreen?window.innerHeight-30:strip.clientHeight-52;
+    const canvas=document.getElementById('csatCvs');
+    canvas.width=w;canvas.height=h;
+    if(CSAT.camera){
+      CSAT.camera.aspect=w/h;
+      CSAT.camera.updateProjectionMatrix();
+    }
+    if(CSAT.renderer)CSAT.renderer.setSize(w,h);
+  },50);
+}
+
+function updateCsatStatus(){
+  const el=document.getElementById('csatStatus');
+  if(!el)return;
+  const deg=Math.round(CSAT.panelAngleTarget*180/Math.PI);
+  const pw=deg===0?'<span style="color:var(--accent2)">AÇIK — 30W</span>':'KAPALI';
+  const an=CSAT.antennasDeployed?'<span style="color:var(--accent2)">DEPLOY</span>':'KAPALI';
+  const modeLabel=CSAT.mode==='AI_SCAN'
+    ?'<span style="color:var(--accent3)">AI_SCAN — DÜNYA TAKİP</span>'
+    :'<span style="color:var(--accent2)">IDLE — GÜNEŞ TAKİP</span>';
+  el.innerHTML=`MOD: ${modeLabel}<br>PANEL: ${pw} (4x)<br>ANTEN: ${an}`;
+}
+
+// ─── SIGNALS ────────────────────────────────────────────────────
+function initSigBars(){
+  document.getElementById('sigBars').innerHTML=[4,7,10,13,10,7,4].map((h,i)=>`<div class="s-bar" style="height:${h}px;background:var(--accent2);animation-delay:${i*.1}s"></div>`).join('');
+}
+
+// ─── ALERTS ─────────────────────────────────────────────────────
+const ALERTS=[
+  {cls:'a-d',msg:'TGT-001: AIS SPOOF TESPİT — KONUM UYUMSUZ +3.2km'},
+  {cls:'a-w',msg:'RF ANOMALİSİ: 168.4 MHz — BEKLENMEYEN EMİSYON'},
+  {cls:'a-i',msg:'PAKET #1247: YER İSTASYONU ONAYLADI'},
+  {cls:'a-o',msg:'STORE-AND-FORWARD: 2.1 KB ŞİFRELİ VERİ İNDİRİLDİ'},
+  {cls:'a-d',msg:'AC-001: F-16 FORMASYONU TESPİT — 3 UÇAK — HEADING 065°'},
+  {cls:'a-w',msg:'GÜNEŞ PANELİ: VERİM %12 DÜŞTÜ — GÖLGE GEÇİŞİ'},
+  {cls:'a-i',msg:'AI SINIFLANDIRMA: SAVAŞ UÇAĞI — %96.7 GÜVEN'},
+  {cls:'a-o',msg:'MOD DEĞİŞİKLİĞİ: OPTİK → RADAR GEÇİŞİ TAMAMLANDI'},
+  {cls:'a-d',msg:'MİKRO-DOPPLER: ROTOR İMZASI — HEDEF İHA OLARAK SINIFLANDIRILDI'},
+  {cls:'a-w',msg:'İHA SÜRÜSÜ TESPİT — 3+ HEDEF — KOORDİNELİ HAREKET'},
+  {cls:'a-i',msg:'TDOA HESABI: HEDEF KONUMU ±1.2m HASSASIYET'},
+  {cls:'a-d',msg:'IR ANOMALİSİ: +380°C EGZOZ İMZASI — FÜZE MOTORU OLASI'},
+  {cls:'a-w',msg:'ELEKTRONİK HARP: JAMMING TESPİT — 2.4 GHz BANT'},
+  {cls:'a-o',msg:'FREKANS ATLAMA AKTİF — ANTİ-JAMMİNG MODU'},
+];
+function alertLoop(){
+  setInterval(()=>{
+    const a=ALERTS[Math.floor(Math.random()*ALERTS.length)];
+    addAlert(a.cls,a.msg);
+  },2500+Math.random()*2000);
+}
+function addAlert(cls,msg){
+  const feed=document.getElementById('alertFeed');
+  const t=new Date().toTimeString().slice(0,8);
+  const el=document.createElement('div');
+  el.className='a-item '+cls;
+  el.textContent=`[${t}] ${msg}`;
+  feed.insertBefore(el,feed.firstChild);
+  while(feed.children.length>12)feed.removeChild(feed.lastChild);
+  const critCount=feed.querySelectorAll('.a-c,.a-d').length;
+  document.getElementById('alertBadge').textContent=critCount+' KRİTİK';
+}
+
+// ─── CLOCK ──────────────────────────────────────────────────────
+let passSeconds=2537;
+function clockLoop(){
+  setInterval(()=>{
+    document.getElementById('utcClock').textContent=new Date().toISOString().slice(11,19);
+    passSeconds=Math.max(0,passSeconds-1);
+    const h=Math.floor(passSeconds/3600),m=Math.floor((passSeconds%3600)/60),s=passSeconds%60;
+    document.getElementById('passTimer').textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    document.getElementById('batVal').textContent=Math.round(75+Math.random()*5)+'%';
+    document.getElementById('altVal').textContent=(485+Math.random()*4).toFixed(0)+' km';
+    document.getElementById('epsV').textContent=(11.5+Math.random()*2).toFixed(1)+'W';
+    document.getElementById('tempV').textContent='+'+(22+Math.random()*5).toFixed(0)+'°C';
+    document.getElementById('vpuV').textContent=Math.round(65+Math.random()*15)+'%';
+    document.getElementById('pktV').textContent='1247/'+(1248+Math.floor(Math.random()*3));
+    document.getElementById('raanVal').textContent=(184+ST.tick*0.001).toFixed(2)+'°';
+    document.getElementById('orbNum').textContent=1247+Math.floor(passSeconds/5670);
+    updateTelemetry();updateAI();updateTargetList();
+  },1000);
+}
+
+// ─── MODE ───────────────────────────────────────────────────────
+const MODES=['OPTİK TARAMA','PASSİF RADAR AKTİF','ŞİFRELİ RÖLE MODU'];
+const RF_BANDS=['AIS 162-174 MHz','RADAR 430-454 MHz','VHF 145-157 MHz'];
+const STATUS_MSGS=['■ MOD-1 OPTİK: AI HEDEF AVLAMA — YOLOv8 AKTİF','■ MOD-2 RADAR: PASSİF BİSTATİK — MİKRO-DOPPLER ANALİZ','■ MOD-3 RÖLE: FREKANS ATLAMA — AES-256 ŞİFRELİ'];
+function setMode(m,btn){
+  ST.mode=m;
+  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('rfBandLbl').textContent=RF_BANDS[m];
+  document.getElementById('botStatus').textContent=STATUS_MSGS[m];
+  document.getElementById('dataLbl').textContent=m===2?'RÖLE AKTİF':'BAĞLANTI AKTİF';
+}
+
+// ─── COMMAND ────────────────────────────────────────────────────
+const CMDS={
+  help:'Komutlar: mode [1-3], scan, target, zoom, status, clear, missile, globe, siren off, adsb',
+  scan:'RF taraması başlatıldı — 162-174 MHz AIS bant...',
+  target:'Hedef listesi güncellendi — tüm hedefler aktif izlemede',
+  status:'GÖLGE-1 OPERASYONEL — 14g 07s uptime — AES-256 aktif',
+  zoom:'Harita Türkiye merkezine döndürülüyor...',
+  clear:'TÜM HEDEFLER TEMİZLENDİ — HARİTA SIFIRLANDI.',
+  missile:'FÜZE SİMÜLASYONU BAŞLATILDI...',
+  globe:'3D Küre görünümüne geçildi.',
+  adsb:'ADS-B veri çekme başlatıldı — OpenSky Network...',
+  'siren off':'SİREN KAPATILIYOR...',
+  'siren stop':'SİREN KAPATILIYOR...',
+  mute:'SİREN KAPATILIYOR...',
+  'mode 1':'Mod-1 OPTİK aktif edildi.','mode 2':'Mod-2 RADAR aktif edildi.','mode 3':'Mod-3 RÖLE aktif edildi.',
+};
+function handleCmd(e){
+  if(e.key!=='Enter')return;
+  const inp=document.getElementById('cmdIn');
+  const cmd=inp.value.trim().toLowerCase();inp.value='';
+  const r=CMDS[cmd]||`Bilinmeyen komut: "${cmd}" — help yaz`;
+  document.getElementById('botStatus').textContent='> '+r;
+  if(cmd==='mode 1')setMode(0,document.querySelectorAll('.mode-btn')[0]);
+  if(cmd==='mode 2')setMode(1,document.querySelectorAll('.mode-btn')[1]);
+  if(cmd==='mode 3')setMode(2,document.querySelectorAll('.mode-btn')[2]);
+  if(cmd==='zoom'&&ST.map)ST.map.flyTo([39.5,33],6,{duration:1.5});
+  if(cmd==='missile')launchMissile();
+  if(cmd==='globe'){setView('globe');ST.map.flyTo([39.5,33],3,{duration:1.5});}
+  if(cmd==='siren off'||cmd==='siren stop'||cmd==='mute')stopSiren();
+  if(cmd==='adsb')fetchRealAirTraffic();
+  if(cmd==='clear')clearAll();
+}
+
+// ─── CLEAR ALL ──────────────────────────────────────────────────
+function clearAll(){
+  // AI scan marker'larını temizle
+  aiScanMarkers.forEach(m=>ST.map.removeLayer(m));
+  aiScanMarkers=[];
+  aiScanActive=false;
+  document.getElementById('scanStatus').textContent='HAZIR';
+  document.getElementById('scanStatus').style.color='';
+  // Füzeleri temizle
+  ST.missiles.forEach(m=>{
+    if(m.marker)ST.map.removeLayer(m.marker);
+    if(m.trail)ST.map.removeLayer(m.trail);
+    if(m.trailGlow)ST.map.removeLayer(m.trailGlow);
+    if(m.dangerZone)ST.map.removeLayer(m.dangerZone);
+  });
+  ST.missiles=[];
+  // Uçakları temizle
+  ST.aircrafts.forEach(a=>{
+    if(a.marker)ST.map.removeLayer(a.marker);
+    if(a.trail)ST.map.removeLayer(a.trail);
+  });
+  ST.aircrafts=[];
+  // İHA'ları temizle
+  ST.drones.forEach(d=>{
+    if(d.marker)ST.map.removeLayer(d.marker);
+    if(d.trail)ST.map.removeLayer(d.trail);
+  });
+  ST.drones=[];
+  // Statik hedefleri temizle
+  ST.targets.forEach(t=>{if(t.marker)ST.map.removeLayer(t.marker);});
+  ST.targets=[];
+  // Gerçek uçakları temizle
+  Object.values(ST.realAcMarkers).forEach(m=>{ST.map.removeLayer(m.marker);});
+  ST.realAcMarkers={};
+  ST.realAircraft=[];
+  // Sayaçları sıfırla
+  ST.missileCount=0;
+  // Sireni kapat
+  stopSiren();
+  // Alarm feed temizle
+  document.getElementById('alertFeed').innerHTML='';
+  // Alarm overlay kapat
+  document.getElementById('alarmOverlay').classList.remove('active');
+  document.getElementById('missileBanner').classList.remove('active');
+  // Hedef listesi ve sayaçları sıfırla
+  document.getElementById('tgtList').innerHTML='';
+  document.getElementById('tgtBadge').textContent='0 HEDEF';
+  document.getElementById('tcMissile').textContent='0';
+  document.getElementById('tcAircraft').textContent='0';
+  document.getElementById('tcDrone').textContent='0';
+  document.getElementById('tcReal').textContent='0';
+  document.getElementById('threatVal').textContent='0 AKTİF';
+  document.getElementById('threatVal').className='tb-stat-val green';
+  document.getElementById('alertBadge').textContent='0';
+  document.getElementById('satStatus').textContent='OPR';
+  document.getElementById('satStatus').className='tb-stat-val green';
+  document.getElementById('botStatus').textContent='■ SİSTEM TEMİZLENDİ — HAZIR';
+}
+
+// ─── HAVA TRAFİĞİ (ADS-B + SİMÜLASYON FALLBACK) ──────────────
+let adsbLastFetch=0;
+let adsbRetryDelay=60000; // 60s başlangıç, rate limit'te artar
+let adsbUsingSimulation=false;
+
+// Gerçekçi Türk hava sahası uçuş verileri
+const SIM_FLIGHTS=[
+  {cs:'THY1',icao:'4b1801',co:'Turkey',lat:40.5,lon:29.5,alt:11280,vel:245,hdg:90,route:'IST→ANK'},
+  {cs:'THY2',icao:'4b1802',co:'Turkey',lat:39.2,lon:32.5,alt:10360,vel:238,hdg:270,route:'ANK→IST'},
+  {cs:'THY3',icao:'4b1803',co:'Turkey',lat:37.8,lon:30.2,alt:11890,vel:250,hdg:180,route:'IST→AYT'},
+  {cs:'THY4',icao:'4b1804',co:'Turkey',lat:38.5,lon:27.5,alt:9140,vel:220,hdg:45,route:'ADB→IST'},
+  {cs:'THY5',icao:'4b1805',co:'Turkey',lat:41.2,lon:36.0,alt:10670,vel:242,hdg:95,route:'IST→TZX'},
+  {cs:'PGT41',icao:'4b2101',co:'Turkey',lat:36.9,lon:34.8,alt:10970,vel:235,hdg:270,route:'ADA→IST'},
+  {cs:'PGT42',icao:'4b2102',co:'Turkey',lat:39.8,lon:30.8,alt:7620,vel:195,hdg:120,route:'SAW→AYT'},
+  {cs:'PGT43',icao:'4b2103',co:'Turkey',lat:40.8,lon:40.5,alt:11580,vel:248,hdg:280,route:'ERZ→IST'},
+  {cs:'AJA11',icao:'4b2201',co:'Turkey',lat:37.2,lon:28.8,alt:8530,vel:210,hdg:160,route:'IST→BJV'},
+  {cs:'SXS71',icao:'4b2301',co:'Turkey',lat:38.8,lon:35.5,alt:10060,vel:230,hdg:200,route:'ANK→ADA'},
+  {cs:'DLH4T',icao:'3c6581',co:'Germany',lat:41.5,lon:28.0,alt:11890,vel:255,hdg:120,route:'FRA→IST'},
+  {cs:'BAW7G',icao:'400a12',co:'UK',lat:40.2,lon:26.5,alt:12190,vel:260,hdg:110,route:'LHR→IST'},
+  {cs:'UAE55',icao:'896401',co:'UAE',lat:37.5,lon:42.0,alt:12500,vel:265,hdg:310,route:'DXB→IST'},
+  {cs:'QTR8B',icao:'06a1b2',co:'Qatar',lat:36.8,lon:40.5,alt:11890,vel:258,hdg:320,route:'DOH→IST'},
+  {cs:'AFR5K',icao:'3944e1',co:'France',lat:41.0,lon:25.5,alt:11280,vel:248,hdg:100,route:'CDG→IST'},
+  {cs:'KLM6R',icao:'484b11',co:'Netherlands',lat:42.0,lon:30.0,alt:10670,vel:240,hdg:140,route:'AMS→ANK'},
+  {cs:'FDB91',icao:'896801',co:'UAE',lat:36.5,lon:32.0,alt:10360,vel:232,hdg:350,route:'DXB→AYT'},
+  {cs:'SVA32',icao:'710201',co:'Saudi Arabia',lat:37.0,lon:38.5,alt:11580,vel:252,hdg:340,route:'JED→IST'},
+  {cs:'RYR4C',icao:'4ca8e1',co:'Ireland',lat:40.5,lon:27.0,alt:11280,vel:245,hdg:95,route:'STN→SAW'},
+  {cs:'THY6',icao:'4b1806',co:'Turkey',lat:39.0,lon:44.0,alt:9750,vel:225,hdg:260,route:'IGD→ANK'},
+];
+
+async function fetchRealAirTraffic(){
+  // Rate limit koruması — minimum 60 saniye aralık
+  if(Date.now()-adsbLastFetch<adsbRetryDelay){
+    if(!adsbUsingSimulation) generateSimTraffic();
+    return;
+  }
+  try{
+    addAlert('a-i','ADS-B: OpenSky Network sorgulanıyor...');
+    const url='https://opensky-network.org/api/states/all?lamin=34&lamax=43&lomin=24&lomax=46';
+    const resp=await fetch(url);
+    if(resp.status===429){
+      // Rate limit — süreyi artır ve simülasyona geç
+      adsbRetryDelay=Math.min(adsbRetryDelay*2,300000); // max 5 dk
+      addAlert('a-w',`ADS-B: Rate limit — ${Math.round(adsbRetryDelay/1000)}s bekleniyor, simülasyon aktif`);
+      generateSimTraffic();
+      adsbLastFetch=Date.now();
+      return;
+    }
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const data=await resp.json();
+    if(data.states&&data.states.length>0){
+      adsbUsingSimulation=false;
+      adsbRetryDelay=60000; // başarılıysa 60s'ye geri dön
+      renderAirTraffic(data.states.map(s=>({
+        icao:s[0],cs:(s[1]||'').trim()||s[0].toUpperCase(),co:s[2]||'?',
+        lat:s[6],lon:s[5],alt:(s[7]||s[13]||0)*3.281,
+        vel:(s[9]||0)*1.944,hdg:s[10]||0,ground:s[8],source:'ADS-B'
+      })).filter(f=>f.lat&&f.lon&&!f.ground));
+      addAlert('a-o',`ADS-B: ${ST.realAircraft.length} gerçek uçuş haritada`);
+    } else {
+      generateSimTraffic();
+    }
+    adsbLastFetch=Date.now();
+  }catch(err){
+    console.warn('OpenSky:',err);
+    generateSimTraffic();
+    adsbLastFetch=Date.now();
+  }
+}
+
+function generateSimTraffic(){
+  if(adsbUsingSimulation&&ST.realAircraft.length>0){
+    // Zaten simülasyon var — pozisyonları güncelle (hareket ettir)
+    moveSimTraffic();
+    return;
+  }
+  adsbUsingSimulation=true;
+  // Rastgele 12-18 uçuş seç
+  const count=12+Math.floor(Math.random()*7);
+  const shuffled=[...SIM_FLIGHTS].sort(()=>Math.random()-0.5).slice(0,count);
+  // Pozisyonlara rastgelelik ekle
+  const states=shuffled.map(f=>({
+    icao:f.icao,cs:f.cs,co:f.co,
+    lat:f.lat+(Math.random()-0.5)*1.5,
+    lon:f.lon+(Math.random()-0.5)*1.5,
+    alt:f.alt+Math.round((Math.random()-0.5)*600),
+    vel:f.vel+Math.round((Math.random()-0.5)*15),
+    hdg:f.hdg+(Math.random()-0.5)*10,
+    route:f.route,source:'SİMÜLASYON'
+  }));
+  renderAirTraffic(states);
+  addAlert('a-i',`ADS-B SİM: ${states.length} simüle uçuş oluşturuldu (THY/PGT/Uluslararası)`);
+}
+
+function moveSimTraffic(){
+  // Mevcut simüle uçuşları hareket ettir
+  ST.realAircraft.forEach(ac=>{
+    const hRad=ac.heading*Math.PI/180;
+    ac.lat+=Math.cos(hRad)*0.002;
+    ac.lon+=Math.sin(hRad)*0.002;
+    ac.heading+=(Math.random()-0.5)*0.5;
+    // Marker güncelle
+    const m=ST.realAcMarkers[ac.icao];
+    if(m&&m.marker){
+      m.marker.setLatLng([ac.lat,ac.lon]);
+      const el=m.marker.getElement();
+      if(el){const mk=el.querySelector('.real-ac-marker');if(mk)mk.style.transform=`rotate(${ac.heading}deg)`;}
+    }
+    // Harita dışına çıkarsa sar
+    if(ac.lat<33||ac.lat>44)ac.lat=38+Math.random()*3;
+    if(ac.lon<23||ac.lon>47)ac.lon=28+Math.random()*12;
+  });
+  document.getElementById('tcReal').textContent=ST.realAircraft.length;
+}
+
+function renderAirTraffic(flights){
+  // Eski marker'ları temizle
+  Object.values(ST.realAcMarkers).forEach(m=>{ST.map.removeLayer(m.marker);});
+  ST.realAcMarkers={};
+  ST.realAircraft=[];
+
+  flights.forEach(f=>{
+    const altFt=Math.round(f.alt);
+    const velKts=Math.round(f.vel);
+    const srcColor=f.source==='ADS-B'?'var(--accent2)':'var(--accent)';
+    const srcLabel=f.source==='ADS-B'?'GERÇEK ADS-B':'SİMÜLASYON';
+
+    const icon=L.divIcon({
+      html:`<div style="position:relative;">
+        <div class="real-ac-marker" style="transform:rotate(${f.hdg}deg);">✈</div>
+        <div class="real-ac-label">${f.cs}</div>
+        <div class="real-ac-alt">${altFt>0?'FL'+Math.round(altFt/100):''} ${velKts}kts</div>
+      </div>`,
+      iconSize:[20,20],iconAnchor:[10,10],className:''
+    });
+
+    const marker=L.marker([f.lat,f.lon],{icon,zIndexOffset:100}).addTo(ST.map);
+    marker.bindPopup(`<div style="font-family:var(--font);font-size:9px;color:#b8cfe0;min-width:160px;">
+      <div style="color:#00ff9d;margin-bottom:4px;">✈ ${f.cs}</div>
+      <div>ICAO: ${f.icao.toUpperCase()}</div>
+      <div>ÜLKE: ${f.co}</div>
+      ${f.route?`<div>ROTA: ${f.route}</div>`:''}
+      <div>YÜKSEKLİK: FL${Math.round(altFt/100)} (${altFt} ft)</div>
+      <div>HIZ: ${velKts} kts</div>
+      <div>YÖN: ${Math.round(f.hdg)}°</div>
+      <div style="color:${srcColor};margin-top:4px;">${srcLabel}</div>
+    </div>`,{className:'l-popup'});
+
+    ST.realAcMarkers[f.icao]={marker,lat:f.lat,lon:f.lon,heading:f.hdg,callsign:f.cs};
+    ST.realAircraft.push({icao:f.icao,callsign:f.cs,lat:f.lat,lon:f.lon,alt:altFt,vel:velKts,heading:f.hdg,country:f.co});
+  });
+
+  document.getElementById('tcReal').textContent=ST.realAircraft.length;
+}
+
+function adsbAutoRefresh(){
+  if(adsbUsingSimulation){
+    moveSimTraffic(); // Simüle uçuşları her 20s hareket ettir
+    // Arka planda gerçek veri dene
+    if(Date.now()-adsbLastFetch>adsbRetryDelay) fetchRealAirTraffic();
+  } else {
+    if(Date.now()-adsbLastFetch>adsbRetryDelay) fetchRealAirTraffic();
+  }
+}
+
+// ─── MAIN LOOP ──────────────────────────────────────────────────
+function loop(){
+  ST.tick++;
+  try{drawRadar();}catch(e){}
+  try{updateSatOnMap();}catch(e){}
+  try{updateLaunch();}catch(e){}
+  try{renderCubeSat();}catch(e){}
+  try{updateMissiles();}catch(e){}
+  try{if(ST.tick%3===0)updateAircrafts();}catch(e){}
+  try{if(ST.tick%120===0&&adsbUsingSimulation)moveSimTraffic();}catch(e){}
+  try{renderGlobe();}catch(e){}
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('load',()=>{resizeBottomCanvases();});
+window.addEventListener('resize',()=>{resizeBottomCanvases();});
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 80'>
+  <!-- Füze gövdesi -->
+  <rect x='14' y='15' width='12' height='45' rx='4' fill='#888' stroke='#aaa' stroke-width='1'/>
+  <!-- Burun konisi -->
+  <polygon points='20,2 14,15 26,15' fill='#cc2222' stroke='#aa1111' stroke-width='0.8'/>
+  <!-- Kırmızı bant -->
+  <rect x='13' y='28' width='14' height='4' rx='1' fill='#cc2222'/>
+  <!-- Kanatçıklar -->
+  <polygon points='14,55 6,65 14,60' fill='#666' stroke='#888' stroke-width='0.5'/>
+  <polygon points='26,55 34,65 26,60' fill='#666' stroke='#888' stroke-width='0.5'/>
+  <!-- Nozzle -->
+  <rect x='16' y='60' width='8' height='5' rx='1' fill='#555'/>
+  <!-- Alev -->
+  <polygon points='20,65 14,80 20,73 26,80' fill='#ff6600' opacity='0.9'/>
+  <polygon points='20,68 17,78 20,74 23,78' fill='#ffee44' opacity='0.9'/>
+</svg>

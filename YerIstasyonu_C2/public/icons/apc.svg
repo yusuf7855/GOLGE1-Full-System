@@ -1,0 +1,11 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 80'>
+<defs><linearGradient id='ab' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='#5a5a4a'/><stop offset='100%' stop-color='#3a3a2a'/></linearGradient></defs>
+<polygon points='14,30 24,18 96,18 106,30 110,60 10,60' fill='url(#ab)' stroke='#2a2a1a' stroke-width='2'/>
+<circle cx='24' cy='64' r='8' fill='#1a1a1a' stroke='#444' stroke-width='2'/><circle cx='24' cy='64' r='3.5' fill='#2a2a2a'/>
+<circle cx='60' cy='64' r='8' fill='#1a1a1a' stroke='#444' stroke-width='2'/><circle cx='60' cy='64' r='3.5' fill='#2a2a2a'/>
+<circle cx='96' cy='64' r='8' fill='#1a1a1a' stroke='#444' stroke-width='2'/><circle cx='96' cy='64' r='3.5' fill='#2a2a2a'/>
+<rect x='36' y='8' width='28' height='14' rx='5' fill='#4a4a3a' stroke='#2a2a1a' stroke-width='1.5'/>
+<rect x='60' y='12' width='30' height='4' rx='2' fill='#555'/>
+<rect x='30' y='22' width='12' height='8' rx='1' fill='#223344' opacity='0.7'/>
+<rect x='46' y='22' width='12' height='8' rx='1' fill='#223344' opacity='0.7'/>
+</svg>

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GÖLGE-1 // MOBİL TAKTİK KONTROL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#030609;--bg2:#0a1520;--bg3:#0f1e30;
+  --accent:#00f0ff;--accent2:#00ff9d;--red:#ff0040;--warn:#ffc107;
+  --text:#b8cfe0;--dim:#4a6a8a;
+  --border:rgba(0,240,255,0.12);
+  --font:'Share Tech Mono',monospace;
+  --font2:'Orbitron',monospace;
+}
+html,body{width:100%;min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden;}
+
+/* SCANLINE */
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);pointer-events:none;z-index:9999;}
+
+/* HEADER */
+.header{background:rgba(6,12,18,.95);border-bottom:1px solid var(--border);padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100;backdrop-filter:blur(10px);}
+.header-left{display:flex;align-items:center;gap:10px;}
+.logo{font-family:var(--font2);font-size:14px;font-weight:900;color:var(--accent);letter-spacing:3px;}
+.logo-dot{width:8px;height:8px;border-radius:50%;animation:pulse 1.8s infinite;}
+.logo-dot.online{background:var(--accent2);}
+.logo-dot.offline{background:var(--red);}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.7)}}
+.conn-badge{font-size:8px;letter-spacing:2px;padding:4px 10px;border:1px solid var(--border);border-radius:2px;}
+.conn-badge.ok{border-color:var(--accent2);color:var(--accent2);}
+.conn-badge.err{border-color:var(--red);color:var(--red);animation:blink 1s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* SECTION */
+.section{padding:12px 16px;}
+.section-title{font-family:var(--font2);font-size:9px;letter-spacing:3px;color:var(--dim);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+
+/* BUTTON GRID */
+.btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.btn-full{grid-column:1/-1;}
+
+/* TACTICAL BUTTON */
+.tac-btn{
+  position:relative;overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  padding:20px 12px;
+  border:1px solid var(--border);background:rgba(10,21,32,.7);
+  font-family:var(--font);color:var(--text);
+  cursor:pointer;transition:all .15s;
+  clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));
+  -webkit-user-select:none;user-select:none;
+}
+.tac-btn:active{transform:scale(0.96);}
+.tac-btn .btn-icon{font-size:32px;line-height:1;filter:drop-shadow(0 0 8px currentColor);}
+.tac-btn .btn-label{font-size:10px;letter-spacing:3px;font-weight:bold;}
+.tac-btn .btn-sub{font-size:7px;letter-spacing:1px;color:var(--dim);margin-top:2px;}
+
+/* Corner cut decoration */
+.tac-btn::before{content:'';position:absolute;top:0;right:0;width:12px;height:12px;border-left:1px solid;border-bottom:1px solid;border-color:inherit;opacity:.4;}
+.tac-btn::after{content:'';position:absolute;bottom:0;left:0;width:12px;height:12px;border-right:1px solid;border-top:1px solid;border-color:inherit;opacity:.4;}
+
+/* Ripple effect */
+.tac-btn .ripple{position:absolute;border-radius:50%;background:currentColor;opacity:.3;transform:scale(0);animation:ripple .6s ease-out forwards;pointer-events:none;}
+@keyframes ripple{to{transform:scale(4);opacity:0}}
+
+/* Button variants */
+.tac-btn.missile{border-color:rgba(255,0,64,.4);color:var(--red);}
+.tac-btn.missile:active{background:rgba(255,0,40,.15);border-color:var(--red);box-shadow:0 0 30px rgba(255,0,40,.2);}
+
+.tac-btn.aircraft{border-color:rgba(255,193,7,.3);color:var(--warn);}
+.tac-btn.aircraft:active{background:rgba(255,193,7,.1);border-color:var(--warn);box-shadow:0 0 30px rgba(255,193,7,.2);}
+
+.tac-btn.drone{border-color:rgba(0,240,255,.3);color:var(--accent);}
+.tac-btn.drone:active{background:rgba(0,240,255,.1);border-color:var(--accent);box-shadow:0 0 30px rgba(0,240,255,.2);}
+
+.tac-btn.siren-on{border-color:rgba(255,0,64,.4);color:var(--red);}
+.tac-btn.siren-on:active{background:rgba(255,0,40,.2);box-shadow:0 0 40px rgba(255,0,40,.3);}
+
+.tac-btn.siren-off{border-color:rgba(0,255,157,.3);color:var(--accent2);}
+.tac-btn.siren-off:active{background:rgba(0,255,157,.1);}
+
+.tac-btn.adsb{border-color:rgba(0,255,157,.3);color:var(--accent2);}
+
+.tac-btn.mode{border-color:rgba(0,240,255,.2);color:var(--accent);padding:14px 12px;}
+.tac-btn.mode .btn-icon{font-size:20px;}
+.tac-btn.mode.active-mode{background:rgba(0,240,255,.1);border-color:var(--accent);box-shadow:inset 0 0 20px rgba(0,240,255,.1);}
+
+/* Flash feedback */
+.tac-btn.flash{animation:btnFlash .4s ease;}
+@keyframes btnFlash{0%{filter:brightness(1)}50%{filter:brightness(2)}100%{filter:brightness(1)}}
+
+/* SAFETY COVER (for missile) */
+.safety-wrap{position:relative;}
+.safety-cover{
+  position:absolute;inset:0;z-index:10;
+  background:repeating-linear-gradient(45deg,rgba(255,0,40,.1),rgba(255,0,40,.1) 10px,rgba(255,0,40,.05) 10px,rgba(255,0,40,.05) 20px);
+  border:2px solid rgba(255,0,40,.5);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font2);font-size:9px;letter-spacing:3px;color:var(--red);
+  cursor:pointer;transition:all .3s;
+  clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));
+}
+.safety-cover:active{transform:translateY(-100%);opacity:0;}
+.safety-cover.open{transform:translateY(-100%);opacity:0;pointer-events:none;}
+
+/* STATUS BAR */
+.status-bar{
+  position:fixed;bottom:0;left:0;right:0;
+  background:rgba(3,6,9,.95);border-top:1px solid var(--border);
+  padding:10px 16px;display:flex;justify-content:space-between;align-items:center;
+  backdrop-filter:blur(10px);z-index:100;
+}
+.status-left{display:flex;gap:12px;}
+.status-item{font-size:8px;color:var(--dim);display:flex;align-items:center;gap:4px;}
+.status-val{color:var(--accent);}
+.status-dot{width:5px;height:5px;border-radius:50%;background:var(--accent2);animation:pulse 1.8s infinite;}
+
+/* EVENT LOG */
+.log-wrap{max-height:180px;overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch;}
+.log-item{font-size:8px;padding:5px 8px;margin-bottom:3px;border-left:2px solid;border-radius:0 2px 2px 0;animation:slideIn .2s ease;}
+.log-crit{border-color:var(--red);background:rgba(255,0,40,.1);color:#ff6080;}
+.log-warn{border-color:var(--warn);background:rgba(255,193,7,.08);color:#ffe082;}
+.log-info{border-color:var(--accent);background:rgba(0,240,255,.06);color:#80deea;}
+.log-ok{border-color:var(--accent2);background:rgba(0,255,157,.06);color:#b9f6ca;}
+@keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+
+/* THREAT SUMMARY */
+.threat-row{display:flex;gap:8px;margin-bottom:12px;}
+.threat-chip{flex:1;text-align:center;padding:8px 4px;border:1px solid var(--border);border-radius:2px;font-size:8px;letter-spacing:1px;}
+.threat-chip .tv{font-size:16px;font-family:var(--font2);display:block;margin-top:4px;}
+.tc-m{border-color:rgba(255,0,40,.3);color:var(--red);}
+.tc-a{border-color:rgba(255,193,7,.3);color:var(--warn);}
+.tc-d{border-color:rgba(0,240,255,.3);color:var(--accent);}
+.tc-r{border-color:rgba(0,255,157,.3);color:var(--accent2);}
+
+/* Spacer for fixed bottom bar */
+.bottom-spacer{height:50px;}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo-dot offline" id="connDot"></div>
+    <div class="logo">GÖLGE-1</div>
+  </div>
+  <div class="conn-badge err" id="connBadge">BAĞLANIYOR...</div>
+</div>
+
+<!-- THREAT SUMMARY -->
+<div class="section">
+  <div class="section-title">TEHDİT DURUMU</div>
+  <div class="threat-row">
+    <div class="threat-chip tc-m">FÜZE<span class="tv" id="mCount">0</span></div>
+    <div class="threat-chip tc-a">UÇAK<span class="tv" id="aCount">0</span></div>
+    <div class="threat-chip tc-d">İHA<span class="tv" id="dCount">0</span></div>
+    <div class="threat-chip tc-r">ADS-B<span class="tv" id="rCount">0</span></div>
+  </div>
+</div>
+
+<!-- MISSILE SECTION -->
+<div class="section">
+  <div class="section-title">FÜZE KONTROL</div>
+  <div class="btn-grid">
+    <div class="safety-wrap">
+      <div class="safety-cover" id="safetyCover1" onclick="openSafety(this)">▲ GÜVENLİK KİLİDİ ▲</div>
+      <button class="tac-btn missile" onclick="fireMissile('BALİSTİK FÜZE')">
+        <div class="btn-icon">🚀</div>
+        <div class="btn-label">BALİSTİK</div>
+        <div class="btn-sub">UZUN MENZİL</div>
+      </button>
+    </div>
+    <div class="safety-wrap">
+      <div class="safety-cover" id="safetyCover2" onclick="openSafety(this)">▲ GÜVENLİK KİLİDİ ▲</div>
+      <button class="tac-btn missile" onclick="fireMissile('CRUISE FÜZE')">
+        <div class="btn-icon">🎯</div>
+        <div class="btn-label">CRUISE</div>
+        <div class="btn-sub">HASSAS GÜDÜM</div>
+      </button>
+    </div>
+    <div class="safety-wrap btn-full">
+      <div class="safety-cover" id="safetyCover3" onclick="openSafety(this)">▲ GÜVENLİK KİLİDİ — TIKLA ▲</div>
+      <button class="tac-btn missile btn-full" onclick="fireMissile('TAKTİK FÜZE')">
+        <div class="btn-icon">💥</div>
+        <div class="btn-label">TAKTİK FÜZE</div>
+        <div class="btn-sub">KISA MENZİL — HIZLI MÜDAHALE</div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- AIRCRAFT SECTION -->
+<div class="section">
+  <div class="section-title">HAVA HEDEFİ SİMÜLASYONU</div>
+  <div class="btn-grid">
+    <button class="tac-btn aircraft" onclick="spawnAC('SAVAŞ UÇAĞI')">
+      <div class="btn-icon">✈️</div>
+      <div class="btn-label">SAVAŞ UÇAĞI</div>
+      <div class="btn-sub">F-16 / SU-35</div>
+    </button>
+    <button class="tac-btn aircraft" onclick="spawnAC('BOMBER')">
+      <div class="btn-icon">💣</div>
+      <div class="btn-label">BOMBER</div>
+      <div class="btn-sub">STRATEJİK BOMBALAMA</div>
+    </button>
+    <button class="tac-btn drone" onclick="spawnAC('İHA')">
+      <div class="btn-icon">◆</div>
+      <div class="btn-label">İHA</div>
+      <div class="btn-sub">İNSANSIZ HAVA ARACI</div>
+    </button>
+    <button class="tac-btn drone" onclick="spawnAC('İHA SÜRÜSÜ')">
+      <div class="btn-icon">◆◆◆</div>
+      <div class="btn-label">İHA SÜRÜSÜ</div>
+      <div class="btn-sub">3x KOORDİNELİ</div>
+    </button>
+  </div>
+</div>
+
+<!-- SYSTEM SECTION -->
+<div class="section">
+  <div class="section-title">SİSTEM KONTROL</div>
+  <div class="btn-grid">
+    <button class="tac-btn siren-on" onclick="sirenOn()">
+      <div class="btn-icon">🔊</div>
+      <div class="btn-label">SİREN AÇ</div>
+    </button>
+    <button class="tac-btn siren-off" onclick="sirenOff()">
+      <div class="btn-icon">🔇</div>
+      <div class="btn-label">SİREN KAPAT</div>
+    </button>
+    <button class="tac-btn adsb btn-full" onclick="adsbRefresh()">
+      <div class="btn-icon">📡</div>
+      <div class="btn-label">ADS-B GERÇEK HAVA TRAFİĞİ GÜNCELLE</div>
+      <div class="btn-sub">OpenSky Network — Türkiye Bölgesi</div>
+    </button>
+  </div>
+</div>
+
+<!-- MODE SECTION -->
+<div class="section">
+  <div class="section-title">OPERASYON MODU</div>
+  <div class="btn-grid" style="grid-template-columns:1fr 1fr 1fr;">
+    <button class="tac-btn mode active-mode" id="modeBtn0" onclick="changeMode(0)">
+      <div class="btn-icon">👁</div>
+      <div class="btn-label">OPTİK</div>
+    </button>
+    <button class="tac-btn mode" id="modeBtn1" onclick="changeMode(1)">
+      <div class="btn-icon">📡</div>
+      <div class="btn-label">RADAR</div>
+    </button>
+    <button class="tac-btn mode" id="modeBtn2" onclick="changeMode(2)">
+      <div class="btn-icon">📻</div>
+      <div class="btn-label">RÖLE</div>
+    </button>
+  </div>
+</div>
+
+<!-- CUBESAT KONTROL -->
+<div class="section">
+  <div class="section-title">CUBESAT 3D KONTROL</div>
+  <div class="btn-grid">
+    <button class="tac-btn mode active-mode" id="csatIdle" onclick="csatMode('IDLE',this)">
+      <div class="btn-icon">🛰</div>
+      <div class="btn-label">IDLE</div>
+      <div class="btn-sub">GÜNEŞ TAKİP</div>
+    </button>
+    <button class="tac-btn mode" id="csatScan" onclick="csatMode('AI_SCAN',this)" style="border-color:rgba(255,69,96,.3);color:#ff4560;">
+      <div class="btn-icon">🔍</div>
+      <div class="btn-label">AI SCAN</div>
+      <div class="btn-sub">DÜNYA TAKİP</div>
+    </button>
+  </div>
+  <div class="btn-grid" style="margin-top:8px;">
+    <button class="tac-btn adsb" onclick="csatPanel('deploy',this)">
+      <div class="btn-icon">☀️</div>
+      <div class="btn-label">PANEL AÇ</div>
+    </button>
+    <button class="tac-btn" onclick="csatPanel('retract',this)" style="border-color:rgba(0,240,255,.2);color:var(--dim);">
+      <div class="btn-icon">📦</div>
+      <div class="btn-label">PANEL KAPAT</div>
+    </button>
+    <button class="tac-btn adsb" onclick="csatAntenna('deploy',this)">
+      <div class="btn-icon">📡</div>
+      <div class="btn-label">ANTEN AÇ</div>
+    </button>
+    <button class="tac-btn" onclick="csatAntenna('retract',this)" style="border-color:rgba(0,240,255,.2);color:var(--dim);">
+      <div class="btn-icon">🔒</div>
+      <div class="btn-label">ANTEN KAPAT</div>
+    </button>
+  </div>
+</div>
+
+<!-- EVENT LOG -->
+<div class="section">
+  <div class="section-title">OLAY KAYDI</div>
+  <div class="log-wrap" id="logWrap"></div>
+</div>
+
+<div class="bottom-spacer"></div>
+
+<!-- STATUS BAR -->
+<div class="status-bar">
+  <div class="status-left">
+    <div class="status-item"><div class="status-dot" id="wsDot"></div>WS: <span class="status-val" id="wsStatus">--</span></div>
+    <div class="status-item">İSTASYON: <span class="status-val" id="stationCount">0</span></div>
+    <div class="status-item">MOBİL: <span class="status-val" id="mobileCount">0</span></div>
+  </div>
+  <div class="status-item" style="color:var(--accent);letter-spacing:2px;" id="utc">--:--:--</div>
+</div>
+
+<script>
+// ─── SOCKET CONNECTION ──────────────────────────────────────────
+const socket = io({ query: { type: 'mobile' } });
+
+socket.on('connect', () => {
+  document.getElementById('connDot').className = 'logo-dot online';
+  document.getElementById('connBadge').className = 'conn-badge ok';
+  document.getElementById('connBadge').textContent = 'BAĞLI';
+  document.getElementById('wsStatus').textContent = 'AKTİF';
+  document.getElementById('wsDot').style.background = 'var(--accent2)';
+  addLog('ok', 'Sunucuya bağlandı — WebSocket aktif');
+});
+
+socket.on('disconnect', () => {
+  document.getElementById('connDot').className = 'logo-dot offline';
+  document.getElementById('connBadge').className = 'conn-badge err';
+  document.getElementById('connBadge').textContent = 'BAĞLANTI KESİK';
+  document.getElementById('wsStatus').textContent = 'KESİK';
+  document.getElementById('wsDot').style.background = 'var(--red)';
+  addLog('crit', 'Sunucu bağlantısı kesildi!');
+});
+
+socket.on('conn_status', (d) => {
+  document.getElementById('stationCount').textContent = d.stations;
+  document.getElementById('mobileCount').textContent = d.mobiles;
+});
+
+socket.on('server_log', (d) => {
+  addLog(d.level === 'critical' ? 'crit' : d.level === 'warning' ? 'warn' : d.level === 'ok' ? 'ok' : 'info', d.msg);
+});
+
+// Station status updates
+socket.on('station_status', (d) => {
+  if (d.missiles !== undefined) document.getElementById('mCount').textContent = d.missiles;
+  if (d.aircrafts !== undefined) document.getElementById('aCount').textContent = d.aircrafts;
+  if (d.drones !== undefined) document.getElementById('dCount').textContent = d.drones;
+  if (d.realAc !== undefined) document.getElementById('rCount').textContent = d.realAc;
+});
+
+// ─── ACTIONS ────────────────────────────────────────────────────
+function fireMissile(type) {
+  if (!socket.connected) { addLog('crit', 'Bağlantı yok!'); return; }
+  // Vibrate
+  if (navigator.vibrate) navigator.vibrate([100, 50, 200]);
+
+  const scenarios = {
+    'BALİSTİK FÜZE': [
+      { originLat: 34.0, originLon: 44.0, targetLat: 39.0, targetLon: 35.0 },
+      { originLat: 42.0, originLon: 44.5, targetLat: 40.0, targetLon: 38.0 },
+    ],
+    'CRUISE FÜZE': [
+      { originLat: 35.5, originLon: 25.0, targetLat: 38.5, targetLon: 30.0 },
+      { originLat: 34.5, originLon: 42.0, targetLat: 37.5, targetLon: 36.0 },
+    ],
+    'TAKTİK FÜZE': [
+      { originLat: 33.5, originLon: 36.0, targetLat: 37.0, targetLon: 33.0 },
+      { originLat: 36.0, originLon: 44.0, targetLat: 38.0, targetLon: 40.0 },
+    ],
+  };
+  const opts = scenarios[type] || scenarios['BALİSTİK FÜZE'];
+  const sc = opts[Math.floor(Math.random() * opts.length)];
+
+  socket.emit('launch_missile', { type, ...sc });
+  addLog('crit', `${type} FIRLATILDI!`);
+  flashBtn(event.currentTarget);
+}
+
+function spawnAC(type) {
+  if (!socket.connected) { addLog('crit', 'Bağlantı yok!'); return; }
+  if (navigator.vibrate) navigator.vibrate(50);
+
+  socket.emit('spawn_aircraft', { type });
+
+  if (type === 'İHA SÜRÜSÜ') {
+    // 3 İHA gönder
+    setTimeout(() => socket.emit('spawn_aircraft', { type: 'İHA' }), 500);
+    setTimeout(() => socket.emit('spawn_aircraft', { type: 'İHA' }), 1000);
+  }
+
+  addLog('warn', `${type} gönderildi`);
+  flashBtn(event.currentTarget);
+}
+
+function sirenOn() {
+  if (!socket.connected) return;
+  socket.emit('siren_on');
+  addLog('crit', 'SİREN AKTİF EDİLDİ');
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+}
+
+function sirenOff() {
+  if (!socket.connected) return;
+  socket.emit('siren_off');
+  addLog('ok', 'SİREN KAPATILDI');
+}
+
+function adsbRefresh() {
+  if (!socket.connected) return;
+  socket.emit('adsb_refresh');
+  addLog('info', 'ADS-B veri güncelleme istendi');
+  flashBtn(event.currentTarget);
+}
+
+function changeMode(m) {
+  if (!socket.connected) return;
+  socket.emit('change_mode', { mode: m });
+  document.querySelectorAll('#modeBtn0,#modeBtn1,#modeBtn2').forEach(b => b.classList.remove('active-mode'));
+  document.getElementById('modeBtn' + m).classList.add('active-mode');
+  const names = ['OPTİK', 'RADAR', 'RÖLE'];
+  addLog('info', `Mod değiştirildi: ${names[m]}`);
+}
+
+// CubeSat kontrol
+function csatMode(mode, btn) {
+  if (!socket.connected) { addLog('crit', 'Bağlantı yok!'); return; }
+  socket.emit('cubesat_mode', { mode });
+  document.getElementById('csatIdle').classList.toggle('active-mode', mode === 'IDLE');
+  document.getElementById('csatScan').classList.toggle('active-mode', mode === 'AI_SCAN');
+  if (mode === 'AI_SCAN') {
+    document.getElementById('csatScan').style.background = 'rgba(255,69,96,.2)';
+    document.getElementById('csatIdle').style.background = '';
+  } else {
+    document.getElementById('csatIdle').style.background = 'rgba(0,240,255,.15)';
+    document.getElementById('csatScan').style.background = '';
+  }
+  addLog(mode === 'AI_SCAN' ? 'warn' : 'info', `CubeSat: ${mode}`);
+  if (navigator.vibrate) navigator.vibrate(50);
+  flashBtn(btn);
+}
+
+function csatPanel(action, btn) {
+  if (!socket.connected) { addLog('crit', 'Bağlantı yok!'); return; }
+  socket.emit('cubesat_panel', { action });
+  addLog('info', `Panel: ${action === 'deploy' ? 'AÇILIYOR' : 'KAPANIYOR'}`);
+  if (navigator.vibrate) navigator.vibrate(30);
+  flashBtn(btn);
+}
+
+function csatAntenna(action, btn) {
+  if (!socket.connected) { addLog('crit', 'Bağlantı yok!'); return; }
+  socket.emit('cubesat_antenna', { action });
+  addLog('info', `Anten: ${action === 'deploy' ? 'AÇILIYOR' : 'KAPANIYOR'}`);
+  if (navigator.vibrate) navigator.vibrate(30);
+  flashBtn(btn);
+}
+
+function openSafety(el) {
+  el.classList.add('open');
+  if (navigator.vibrate) navigator.vibrate(30);
+  // Re-lock after 8 seconds
+  setTimeout(() => el.classList.remove('open'), 8000);
+}
+
+// ─── UI HELPERS ─────────────────────────────────────────────────
+function flashBtn(btn) {
+  if (!btn) return;
+  btn.classList.add('flash');
+  setTimeout(() => btn.classList.remove('flash'), 400);
+}
+
+function addLog(level, msg) {
+  const wrap = document.getElementById('logWrap');
+  const el = document.createElement('div');
+  const t = new Date().toTimeString().slice(0, 8);
+  el.className = 'log-item log-' + level;
+  el.textContent = `[${t}] ${msg}`;
+  wrap.insertBefore(el, wrap.firstChild);
+  while (wrap.children.length > 30) wrap.removeChild(wrap.lastChild);
+}
+
+// Clock
+setInterval(() => {
+  document.getElementById('utc').textContent = new Date().toISOString().slice(11, 19) + ' UTC';
+}, 1000);
+</script>
+</body>
+</html>
